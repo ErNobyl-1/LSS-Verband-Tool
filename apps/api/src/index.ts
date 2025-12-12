@@ -1,0 +1,85 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import ingestRoutes from './routes/ingest.js';
+import apiRoutes from './routes/api.js';
+import { lssScraper } from './services/lss-scraper.js';
+
+const app = express();
+const PORT = process.env.API_PORT || 3001;
+const HOST = process.env.API_HOST || '0.0.0.0';
+
+// Middleware
+app.use(cors({
+  origin: '*', // Allow all origins for local development
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-API-Key'],
+}));
+app.use(express.json({ limit: '10mb' }));
+
+// Request logging
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+  });
+  next();
+});
+
+// Routes
+app.use('/ingest', ingestRoutes);
+app.use('/api', apiRoutes);
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'LSS Verband Tool API',
+    version: '1.0.0',
+    endpoints: {
+      ingest: '/ingest/incidents',
+      incidents: '/api/incidents',
+      stream: '/api/stream',
+      health: '/api/health',
+    },
+  });
+});
+
+// Error handling
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred',
+  });
+});
+
+// Start server
+app.listen(Number(PORT), HOST, () => {
+  console.log(`🚀 LSS Verband Tool API running at http://${HOST}:${PORT}`);
+  console.log(`📡 SSE stream available at http://${HOST}:${PORT}/api/stream`);
+  console.log(`🔑 API Key authentication enabled`);
+
+  // Start the LSS scraper if credentials are configured
+  if (process.env.LSS_EMAIL && process.env.LSS_PASSWORD) {
+    console.log(`🌐 Starting LSS scraper...`);
+    lssScraper.start().catch((err) => {
+      console.error('Failed to start LSS scraper:', err);
+    });
+  } else {
+    console.log(`ℹ️  LSS scraper not started (LSS_EMAIL/LSS_PASSWORD not configured)`);
+  }
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, shutting down...');
+  await lssScraper.stop();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT, shutting down...');
+  await lssScraper.stop();
+  process.exit(0);
+});
