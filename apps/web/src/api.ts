@@ -1,4 +1,4 @@
-import { IncidentsResponse, SSEMessage, AllianceStatsResponse, AllianceStatsHistoryResponse, MembersResponse, MissionCreditsResponse } from './types';
+import { IncidentsResponse, SSEIncidentMessage, SSEAllianceStatsMessage, SSEMembersMessage, AllianceStatsResponse, AllianceStatsHistoryResponse, MembersResponse, MissionCreditsResponse } from './types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -15,23 +15,27 @@ export async function fetchIncidents(): Promise<IncidentsResponse> {
   return response.json();
 }
 
-export function createSSEConnection(
-  onMessage: (data: SSEMessage) => void,
-  onError: (error: Event) => void,
-  onConnect: () => void
-): EventSource {
+interface SSECallbacks {
+  onIncident?: (data: SSEIncidentMessage) => void;
+  onAllianceStats?: (data: SSEAllianceStatsMessage) => void;
+  onMembers?: (data: SSEMembersMessage) => void;
+  onError?: (error: Event) => void;
+  onConnect?: () => void;
+}
+
+export function createSSEConnection(callbacks: SSECallbacks): EventSource {
   const eventSource = new EventSource(`${API_URL}/api/stream`);
 
   eventSource.addEventListener('connected', () => {
     console.log('[SSE] Connected to stream');
-    onConnect();
+    callbacks.onConnect?.();
   });
 
   eventSource.addEventListener('incident', (event) => {
     try {
-      const data = JSON.parse(event.data) as SSEMessage;
+      const data = JSON.parse(event.data) as SSEIncidentMessage;
       console.log('[SSE] Incident event:', data.type);
-      onMessage(data);
+      callbacks.onIncident?.(data);
     } catch (e) {
       console.error('[SSE] Failed to parse incident event:', e);
     }
@@ -39,9 +43,9 @@ export function createSSEConnection(
 
   eventSource.addEventListener('batch', (event) => {
     try {
-      const data = JSON.parse(event.data) as SSEMessage;
+      const data = JSON.parse(event.data) as SSEIncidentMessage;
       console.log('[SSE] Batch event:', data.type, 'count:', data.incidents?.length);
-      onMessage(data);
+      callbacks.onIncident?.(data);
     } catch (e) {
       console.error('[SSE] Failed to parse batch event:', e);
     }
@@ -49,11 +53,31 @@ export function createSSEConnection(
 
   eventSource.addEventListener('deleted', (event) => {
     try {
-      const data = JSON.parse(event.data) as SSEMessage;
+      const data = JSON.parse(event.data) as SSEIncidentMessage;
       console.log('[SSE] Deleted event:', data.deletedIds?.length, 'incidents removed');
-      onMessage(data);
+      callbacks.onIncident?.(data);
     } catch (e) {
       console.error('[SSE] Failed to parse deleted event:', e);
+    }
+  });
+
+  eventSource.addEventListener('alliance_stats', (event) => {
+    try {
+      const data = JSON.parse(event.data) as SSEAllianceStatsMessage;
+      console.log('[SSE] Alliance stats event');
+      callbacks.onAllianceStats?.(data);
+    } catch (e) {
+      console.error('[SSE] Failed to parse alliance stats event:', e);
+    }
+  });
+
+  eventSource.addEventListener('members', (event) => {
+    try {
+      const data = JSON.parse(event.data) as SSEMembersMessage;
+      console.log('[SSE] Members event:', data.counts.online, '/', data.counts.total, 'online');
+      callbacks.onMembers?.(data);
+    } catch (e) {
+      console.error('[SSE] Failed to parse members event:', e);
     }
   });
 
@@ -63,7 +87,7 @@ export function createSSEConnection(
 
   eventSource.onerror = (error) => {
     console.error('[SSE] Connection error:', error);
-    onError(error);
+    callbacks.onError?.(error);
   };
 
   return eventSource;

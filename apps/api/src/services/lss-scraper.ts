@@ -1,8 +1,8 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { upsertIncidents, deleteStaleIncidents } from './incidents.js';
-import { saveAllianceStats } from './alliance-stats.js';
-import { upsertMembers, filterExcludedMembers } from './alliance-members.js';
-import { broadcastDeleted } from './sse.js';
+import { saveAllianceStats, getLatestAllianceStatsWithChanges } from './alliance-stats.js';
+import { upsertMembers, filterExcludedMembers, getAllMembers, getMemberCounts } from './alliance-members.js';
+import { broadcastDeleted, broadcastAllianceStats, broadcastMembers } from './sse.js';
 
 // Mission list configuration - same as Tampermonkey script
 const MISSION_LISTS = [
@@ -268,6 +268,12 @@ class LssScraper {
 
       if (response && typeof response.id === 'number') {
         await saveAllianceStats(response);
+
+        // Broadcast updated stats via SSE
+        const statsWithChanges = await getLatestAllianceStatsWithChanges();
+        if (statsWithChanges) {
+          broadcastAllianceStats(statsWithChanges);
+        }
       } else {
         console.error('[LSS-Scraper] Invalid alliance info response:', response);
       }
@@ -310,6 +316,11 @@ class LssScraper {
           `[LSS-Scraper] Members: ${filteredMembers.length} total, ${onlineCount} online ` +
           `(${result.created} new, ${result.updated} updated, ${result.activityChanges} status changes)`
         );
+
+        // Broadcast updated members via SSE
+        const allMembers = await getAllMembers(response.id);
+        const counts = await getMemberCounts(response.id);
+        broadcastMembers({ members: allMembers, counts });
       }
     } catch (error) {
       console.error('[LSS-Scraper] Failed to track members:', error);

@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchMembers } from '../api';
-import { AllianceMember } from '../types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { fetchMembers, createSSEConnection } from '../api';
+import { AllianceMember, SSEMembersMessage } from '../types';
 
-export function useMembers(refreshInterval = 60000) {
+export function useMembers() {
   const [members, setMembers] = useState<AllianceMember[]>([]);
   const [onlineMembers, setOnlineMembers] = useState<AllianceMember[]>([]);
   const [counts, setCounts] = useState({ total: 0, online: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const loadMembers = useCallback(async () => {
     try {
@@ -25,12 +27,30 @@ export function useMembers(refreshInterval = 60000) {
     }
   }, []);
 
+  const handleSSEMessage = useCallback((data: SSEMembersMessage) => {
+    if (data.members) {
+      setMembers(data.members);
+      setOnlineMembers(data.members.filter(m => m.isOnline));
+      setCounts(data.counts);
+    }
+  }, []);
+
   useEffect(() => {
+    // Initial load
     loadMembers();
 
-    const interval = setInterval(loadMembers, refreshInterval);
-    return () => clearInterval(interval);
-  }, [loadMembers, refreshInterval]);
+    // Setup SSE connection for live updates
+    const eventSource = createSSEConnection({
+      onMembers: handleSSEMessage,
+    });
+
+    eventSourceRef.current = eventSource;
+
+    return () => {
+      eventSource.close();
+      eventSourceRef.current = null;
+    };
+  }, [loadMembers, handleSSEMessage]);
 
   return { members, onlineMembers, counts, loading, error, refresh: loadMembers };
 }

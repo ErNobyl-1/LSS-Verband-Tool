@@ -25,13 +25,28 @@ export interface IncidentsResponse {
   };
 }
 
-export interface SSEMessage {
+export interface SSEIncidentMessage {
   type: 'created' | 'updated' | 'batch_upsert' | 'deleted';
   incident?: Incident;
   incidents?: Incident[];
   deletedIds?: string[];
   timestamp: string;
 }
+
+export interface SSEAllianceStatsMessage {
+  type: 'alliance_stats';
+  stats: AllianceStats;
+  timestamp: string;
+}
+
+export interface SSEMembersMessage {
+  type: 'members';
+  members: AllianceMember[];
+  counts: { total: number; online: number };
+  timestamp: string;
+}
+
+export type SSEMessage = SSEIncidentMessage | SSEAllianceStatsMessage | SSEMembersMessage;
 
 export type CategoryFilter = 'all' | 'emergency' | 'planned' | 'event';
 export type StatusFilter = 'all' | 'red' | 'yellow' | 'green';

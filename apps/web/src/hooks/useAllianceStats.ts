@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchAllianceStats } from '../api';
-import { AllianceStats } from '../types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { fetchAllianceStats, createSSEConnection } from '../api';
+import { AllianceStats, SSEAllianceStatsMessage } from '../types';
 
-export function useAllianceStats(refreshInterval = 60000) {
+export function useAllianceStats() {
   const [stats, setStats] = useState<AllianceStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const loadStats = useCallback(async () => {
     try {
@@ -21,12 +23,28 @@ export function useAllianceStats(refreshInterval = 60000) {
     }
   }, []);
 
+  const handleSSEMessage = useCallback((data: SSEAllianceStatsMessage) => {
+    if (data.stats) {
+      setStats(data.stats);
+    }
+  }, []);
+
   useEffect(() => {
+    // Initial load
     loadStats();
 
-    const interval = setInterval(loadStats, refreshInterval);
-    return () => clearInterval(interval);
-  }, [loadStats, refreshInterval]);
+    // Setup SSE connection for live updates
+    const eventSource = createSSEConnection({
+      onAllianceStats: handleSSEMessage,
+    });
+
+    eventSourceRef.current = eventSource;
+
+    return () => {
+      eventSource.close();
+      eventSourceRef.current = null;
+    };
+  }, [loadStats, handleSSEMessage]);
 
   return { stats, loading, error, refresh: loadStats };
 }

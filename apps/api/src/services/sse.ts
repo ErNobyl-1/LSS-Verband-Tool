@@ -1,8 +1,21 @@
 import { Response } from 'express';
-import { Incident } from '../db/schema.js';
+import { Incident, AllianceStat, AllianceMember } from '../db/schema.js';
 
 // Store active SSE connections
 const clients: Set<Response> = new Set();
+
+// Types for SSE data with 24h changes
+interface AllianceStatsWithChanges extends AllianceStat {
+  change24h: {
+    creditsChange: number;
+    rankChange: number;
+  } | null;
+}
+
+interface MembersData {
+  members: AllianceMember[];
+  counts: { total: number; online: number };
+}
 
 export function addClient(res: Response): void {
   clients.add(res);
@@ -75,4 +88,41 @@ export function broadcastDeleted(deletedIncidents: Incident[]): void {
 
 export function getClientCount(): number {
   return clients.size;
+}
+
+export function broadcastAllianceStats(stats: AllianceStatsWithChanges): void {
+  const data = JSON.stringify({
+    type: 'alliance_stats',
+    stats,
+    timestamp: new Date().toISOString(),
+  });
+
+  clients.forEach((client) => {
+    try {
+      client.write(`event: alliance_stats\n`);
+      client.write(`data: ${data}\n\n`);
+    } catch (error) {
+      console.error('Error sending SSE alliance stats to client:', error);
+      removeClient(client);
+    }
+  });
+}
+
+export function broadcastMembers(data: MembersData): void {
+  const payload = JSON.stringify({
+    type: 'members',
+    members: data.members,
+    counts: data.counts,
+    timestamp: new Date().toISOString(),
+  });
+
+  clients.forEach((client) => {
+    try {
+      client.write(`event: members\n`);
+      client.write(`data: ${payload}\n\n`);
+    } catch (error) {
+      console.error('Error sending SSE members to client:', error);
+      removeClient(client);
+    }
+  });
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Incident, SSEMessage } from '../types';
+import { Incident, SSEIncidentMessage } from '../types';
 import { fetchIncidents, createSSEConnection } from '../api';
 
 const RETRY_INTERVAL = 5000; // 5 seconds
@@ -40,7 +40,7 @@ export function useIncidents() {
   }, []);
 
   // Handle SSE messages
-  const handleSSEMessage = useCallback((data: SSEMessage) => {
+  const handleSSEMessage = useCallback((data: SSEIncidentMessage) => {
     if (data.type === 'created' || data.type === 'updated') {
       if (data.incident) {
         setIncidents((prev) => {
@@ -78,15 +78,15 @@ export function useIncidents() {
 
   // Setup SSE connection
   useEffect(() => {
-    const eventSource = createSSEConnection(
-      handleSSEMessage,
-      () => setConnected(false),
-      () => {
+    const eventSource = createSSEConnection({
+      onIncident: handleSSEMessage,
+      onError: () => setConnected(false),
+      onConnect: () => {
         setConnected(true);
         // Reload incidents when SSE connects (API is available)
         loadIncidents();
-      }
-    );
+      },
+    });
 
     eventSourceRef.current = eventSource;
 
