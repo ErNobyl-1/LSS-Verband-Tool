@@ -437,6 +437,18 @@ class LssScraper {
               }
             }
 
+            // Extract mission duration from detail page (e.g., "Dauer: 2 Stunden" or "Dauer: 1 Stunde 30 Minuten")
+            var durationSeconds = null;
+            var bodyText = document.body.innerText || '';
+            var durationMatch = bodyText.match(/Dauer:\\s*(?:(\\d+)\\s*Stunden?)?\\s*(?:(\\d+)\\s*Minuten?)?/i);
+            if (durationMatch) {
+              var hours = parseInt(durationMatch[1], 10) || 0;
+              var minutes = parseInt(durationMatch[2], 10) || 0;
+              if (hours > 0 || minutes > 0) {
+                durationSeconds = hours * 3600 + minutes * 60;
+              }
+            }
+
             // Extract players from vehicle table
             function getPlayers(tableId) {
               var table = document.getElementById(tableId);
@@ -457,15 +469,17 @@ class LssScraper {
             return {
               remaining_seconds: remainingSeconds,
               remaining_at: new Date().toISOString(),
+              duration_seconds: durationSeconds,
               players_driving: getPlayers('mission_vehicle_driving'),
               players_at_mission: getPlayers('mission_vehicle_at_mission'),
             };
           })()
-        `) as { remaining_seconds: number | null; remaining_at: string; players_driving: string[]; players_at_mission: string[] };
+        `) as { remaining_seconds: number | null; remaining_at: string; duration_seconds: number | null; players_driving: string[]; players_at_mission: string[] };
 
         // Merge into raw_json
         mission.raw_json.remaining_seconds = details.remaining_seconds;
         mission.raw_json.remaining_at = details.remaining_at;
+        mission.raw_json.duration_seconds = details.duration_seconds;
         mission.raw_json.players_driving = details.players_driving;
         mission.raw_json.players_at_mission = details.players_at_mission;
 

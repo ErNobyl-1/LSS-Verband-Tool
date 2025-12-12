@@ -40,6 +40,18 @@ function getRemainingSeconds(incident: Incident): { seconds: number; at: Date } 
   return { seconds, at };
 }
 
+// Parse duration_seconds from rawJson (mission duration from detail page)
+// Used to calculate end time for planned missions that haven't started yet
+function getDurationSeconds(incident: Incident): number | null {
+  const rawJson = incident.rawJson as Record<string, unknown> | null;
+  if (!rawJson || rawJson.duration_seconds === null || rawJson.duration_seconds === undefined) {
+    return null;
+  }
+  const seconds = parseInt(String(rawJson.duration_seconds), 10);
+  if (isNaN(seconds) || seconds <= 0) return null;
+  return seconds;
+}
+
 // Parse progress_percent from rawJson (percentage of time REMAINING)
 // 94% = 94% of time remaining (just started), 6% = only 6% left (almost done)
 function getProgressPercent(incident: Incident): number | null {
@@ -183,14 +195,38 @@ function useLiveCountdown(incident: Incident): { toStart: number | null; remaini
   return { toStart, remaining };
 }
 
+// Calculate end time for missions that haven't started yet (startTime + duration)
+function calculatePlannedEndTime(incident: Incident): Date | null {
+  const startTime = calculateStartTime(incident);
+  const duration = getDurationSeconds(incident);
+  if (!startTime || !duration) return null;
+  return new Date(startTime.getTime() + duration * 1000);
+}
+
+// Format duration in hours and minutes (e.g., "2 Std." or "1 Std. 30 Min.")
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  if (hours > 0 && minutes > 0) {
+    return `${hours} Std. ${minutes} Min.`;
+  } else if (hours > 0) {
+    return `${hours} Std.`;
+  } else {
+    return `${minutes} Min.`;
+  }
+}
+
 // Component for planned mission time display (timer only, no players)
 function PlannedMissionTimer({ incident }: { incident: Incident }) {
   const { toStart, remaining } = useLiveCountdown(incident);
   const progressPercent = getProgressPercent(incident);
   const startTime = calculateStartTime(incident);
   const endTime = calculateEndTime(incident);
+  const plannedEndTime = calculatePlannedEndTime(incident);
+  const duration = getDurationSeconds(incident);
 
-  // Mission hasn't started yet - show countdown to start
+  // Mission hasn't started yet - show countdown to start AND end time if duration is known
   if (toStart !== null && toStart > 0) {
     return (
       <div className="mt-2 px-2 py-1 rounded border text-xs bg-blue-50 border-blue-200 text-blue-700">
@@ -201,6 +237,14 @@ function PlannedMissionTimer({ incident }: { incident: Incident }) {
             {startTime && ` (${formatTime(startTime)})`}
           </span>
         </div>
+        {plannedEndTime && duration && (
+          <div className="flex justify-between mt-1 text-blue-600">
+            <span>Ende ({formatDuration(duration)}):</span>
+            <span className="font-mono font-medium">
+              {formatTime(plannedEndTime)}
+            </span>
+          </div>
+        )}
       </div>
     );
   }
