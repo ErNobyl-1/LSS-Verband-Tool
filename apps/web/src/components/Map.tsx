@@ -7,15 +7,47 @@ interface MapProps {
   incidents: Incident[];
 }
 
-function getMarkerColor(source: string): string {
-  const colors: Record<string, string> = {
-    alliance: '#3b82f6', // blue
-    alliance_event: '#8b5cf6', // purple
-    own: '#64748b', // slate
-    own_shared: '#06b6d4', // cyan
-    unknown: '#6b7280', // gray
-  };
-  return colors[source] || colors.unknown;
+function getMarkerColor(status: string | null): string {
+  switch (status) {
+    case 'red':
+      return '#ef4444'; // red - unbearbeitet
+    case 'yellow':
+      return '#eab308'; // yellow - Anfahrt
+    case 'green':
+      return '#22c55e'; // green - In Durchführung
+    default:
+      return '#6b7280'; // gray - unknown
+  }
+}
+
+function createRoundMarker(color: string): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'incident-marker incident-marker-round';
+  el.style.width = '20px';
+  el.style.height = '20px';
+  el.style.borderRadius = '50%';
+  el.style.border = '3px solid white';
+  el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+  el.style.cursor = 'pointer';
+  el.style.backgroundColor = color;
+  return el;
+}
+
+function createPinMarker(color: string): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'incident-marker incident-marker-pin';
+  el.style.cursor = 'pointer';
+
+  // SVG pin marker - tip points to exact coordinates
+  el.innerHTML = `
+    <svg width="24" height="36" viewBox="0 0 24 36" style="filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));">
+      <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z"
+            fill="${color}" stroke="white" stroke-width="2"/>
+      <circle cx="12" cy="12" r="5" fill="white"/>
+    </svg>
+  `;
+
+  return el;
 }
 
 function cleanTitle(title: string) {
@@ -26,6 +58,8 @@ export function Map({ incidents }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<globalThis.Map<number, maplibregl.Marker>>(new globalThis.Map());
+  // Track marker metadata for live updates
+  const markerDataRef = useRef<globalThis.Map<number, { status: string | null; category: string }>>(new globalThis.Map());
 
   // Initialize map
   useEffect(() => {
@@ -70,11 +104,14 @@ export function Map({ incidents }: MapProps) {
     const currentMarkers = markersRef.current;
     const incidentIds = new Set(incidents.map((i) => i.id));
 
+    const markerData = markerDataRef.current;
+
     // Remove markers for incidents that no longer exist
     currentMarkers.forEach((marker, id) => {
       if (!incidentIds.has(id)) {
         marker.remove();
         currentMarkers.delete(id);
+        markerData.delete(id);
       }
     });
 
@@ -84,24 +121,35 @@ export function Map({ incidents }: MapProps) {
 
       let marker = currentMarkers.get(incident.id);
 
-      if (!marker) {
-        // Create new marker
-        const el = document.createElement('div');
-        el.className = 'incident-marker';
-        el.style.width = '24px';
-        el.style.height = '24px';
-        el.style.borderRadius = '50%';
-        el.style.border = '3px solid white';
-        el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-        el.style.cursor = 'pointer';
-        el.style.backgroundColor = getMarkerColor(incident.source);
+      const existingData = markerData.get(incident.id);
+      const needsRecreate = marker && existingData && (
+        existingData.status !== incident.status ||
+        existingData.category !== incident.category
+      );
 
-        marker = new maplibregl.Marker({ element: el })
+      // Remove old marker if status/category changed
+      if (needsRecreate && marker) {
+        marker.remove();
+        currentMarkers.delete(incident.id);
+        marker = undefined;
+      }
+
+      if (!marker) {
+        // Create new marker based on category and status
+        const color = getMarkerColor(incident.status);
+        const isPlanned = incident.category === 'planned';
+        const el = isPlanned ? createRoundMarker(color) : createPinMarker(color);
+
+        // Pin markers need anchor at bottom tip; round markers centered
+        const anchor = isPlanned ? 'center' : 'bottom';
+
+        marker = new maplibregl.Marker({ element: el, anchor })
           .setLngLat([incident.lon, incident.lat])
           .addTo(map.current!);
 
-        // Create popup
-        const popup = new maplibregl.Popup({ offset: 25, closeButton: false })
+        // Create popup with appropriate offset based on marker type
+        const popupOffset = isPlanned ? 12 : 36;
+        const popup = new maplibregl.Popup({ offset: popupOffset, closeButton: false })
           .setHTML(`
             <div style="padding: 4px;">
               <div style="font-weight: 600; margin-bottom: 4px;">${cleanTitle(incident.title)}</div>
@@ -113,10 +161,10 @@ export function Map({ incidents }: MapProps) {
           `);
 
         marker.setPopup(popup);
-
         currentMarkers.set(incident.id, marker);
+        markerData.set(incident.id, { status: incident.status, category: incident.category });
       } else {
-        // Update existing marker position
+        // Update existing marker position only
         marker.setLngLat([incident.lon, incident.lat]);
       }
     });

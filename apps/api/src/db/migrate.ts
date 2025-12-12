@@ -153,6 +153,16 @@ export async function runMigrations(existingPool?: pg.Pool): Promise<void> {
   await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS users_lss_name_idx ON users(lss_name)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS users_is_active_idx ON users(is_active)`);
 
+  // Add badge_color column if it doesn't exist (for existing databases)
+  await db.execute(sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='badge_color') THEN
+        ALTER TABLE users ADD COLUMN badge_color VARCHAR(7);
+      END IF;
+    END $$;
+  `);
+
   // ============================================
   // SESSIONS TABLE (for authentication)
   // ============================================

@@ -7,6 +7,7 @@ export interface User {
   id: number;
   lssName: string;
   displayName: string | null;
+  badgeColor: string | null;
   allianceMemberId: number | null;
   isActive: boolean;
   isAdmin: boolean;
@@ -141,51 +142,6 @@ export function useAuth() {
     }
   }, []);
 
-  // Register
-  const register = useCallback(async (lssName: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      const response = await fetch(`${API_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lssName, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        const { user, token } = data.data;
-        localStorage.setItem(TOKEN_KEY, token);
-
-        setState({
-          user,
-          token,
-          isAuthenticated: false,
-          isPending: true,
-          isLoading: false,
-          error: null,
-        });
-
-        return { success: true };
-      } else {
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: data.message || 'Registrierung fehlgeschlagen',
-        }));
-        return { success: false, error: data.message };
-      }
-    } catch {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: 'Verbindungsfehler',
-      }));
-      return { success: false, error: 'Verbindungsfehler' };
-    }
-  }, []);
-
   // Logout
   const logout = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -245,7 +201,6 @@ export function useAuth() {
   return {
     ...state,
     login,
-    register,
     logout,
     refreshUser,
   };

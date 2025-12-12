@@ -2,13 +2,12 @@ import { Router, Request, Response } from 'express';
 import { incidentQuerySchema } from '../validation/schemas.js';
 import { queryIncidents, getIncidentById } from '../services/incidents.js';
 import { addClient, removeClient, getClientCount } from '../services/sse.js';
-import { getLatestAllianceStats, getLatestAllianceStatsWithChanges, getAllianceStatsHistory, getAggregatedStats } from '../services/alliance-stats.js';
+import { getLatestAllianceStats, getLatestAllianceStatsWithChanges, getLatestAllianceStatsWithAllChanges, getAllianceStatsHistory, getAggregatedStats } from '../services/alliance-stats.js';
 import { getAllMembers, getOnlineMembers, getMemberById, getMemberActivityHistory, getMemberCounts } from '../services/alliance-members.js';
 import { getAllMissionCredits, getMissionTypeCacheStats, refreshMissionTypes } from '../services/mission-types.js';
 import { requireAdmin, authMiddlewareAllowPending } from '../middleware/auth.js';
 import {
   getUserByLssName,
-  createUser,
   verifyPassword,
   createSession,
   deleteSession,
@@ -17,7 +16,13 @@ import {
   activateUser,
   deleteUser,
   updateLastLogin,
+  createUserAsAdmin,
+  updateUserAsAdmin,
+  resetUserPassword,
+  updateOwnSettings,
+  updateOwnPassword,
 } from '../services/auth.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -148,6 +153,32 @@ router.get('/alliance/stats', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error fetching alliance stats:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/alliance/stats/full - Get latest alliance stats with all time period changes
+router.get('/alliance/stats/full', async (req: Request, res: Response) => {
+  try {
+    const latest = await getLatestAllianceStatsWithAllChanges();
+
+    if (!latest) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No alliance stats available yet',
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: latest,
+    });
+  } catch (error) {
+    console.error('Error fetching full alliance stats:', error);
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -409,66 +440,6 @@ router.post('/mission-credits/refresh', async (req: Request, res: Response) => {
 // AUTHENTICATION ENDPOINTS
 // ============================================
 
-// POST /api/auth/register - Register a new user
-router.post('/auth/register', async (req: Request, res: Response) => {
-  try {
-    const { lssName, password } = req.body;
-
-    if (!lssName || typeof lssName !== 'string' || lssName.trim().length < 2) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation Error',
-        message: 'LSS-Name muss mindestens 2 Zeichen lang sein',
-      });
-    }
-
-    if (!password || typeof password !== 'string' || password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation Error',
-        message: 'Passwort muss mindestens 6 Zeichen lang sein',
-      });
-    }
-
-    // Check if user already exists
-    const existingUser = await getUserByLssName(lssName.trim());
-    if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        error: 'Conflict',
-        message: 'Ein Account mit diesem LSS-Namen existiert bereits',
-      });
-    }
-
-    // Create user (not active by default)
-    const user = await createUser(lssName.trim(), password);
-
-    // Create session so user can check their status
-    const token = await createSession(user.id);
-
-    return res.status(201).json({
-      success: true,
-      data: {
-        user: {
-          id: user.id,
-          lssName: user.lssName,
-          isActive: user.isActive,
-          isAdmin: user.isAdmin,
-        },
-        token,
-      },
-      message: 'Registrierung erfolgreich. Warte auf Freischaltung durch Admin.',
-    });
-  } catch (error) {
-    console.error('Error registering user:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      message: 'Registrierung fehlgeschlagen',
-    });
-  }
-});
-
 // POST /api/auth/login - Login
 router.post('/auth/login', async (req: Request, res: Response) => {
   try {
@@ -565,6 +536,7 @@ router.get('/auth/me', authMiddlewareAllowPending, (req: Request, res: Response)
       id: user.id,
       lssName: user.lssName,
       displayName: user.displayName,
+      badgeColor: user.badgeColor,
       allianceMemberId: user.allianceMemberId,
       isActive: user.isActive,
       isAdmin: user.isAdmin,
@@ -572,6 +544,96 @@ router.get('/auth/me', authMiddlewareAllowPending, (req: Request, res: Response)
       lastLoginAt: user.lastLoginAt,
     },
   });
+});
+
+// PUT /api/auth/settings - Update own settings
+router.put('/auth/settings', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const { displayName, badgeColor } = req.body;
+
+    const updated = await updateOwnSettings(user.id, {
+      displayName: displayName !== undefined ? displayName : user.displayName,
+      badgeColor: badgeColor !== undefined ? badgeColor : user.badgeColor,
+    });
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Benutzer nicht gefunden',
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        id: updated.id,
+        lssName: updated.lssName,
+        displayName: updated.displayName,
+        badgeColor: updated.badgeColor,
+        allianceMemberId: updated.allianceMemberId,
+        isActive: updated.isActive,
+        isAdmin: updated.isAdmin,
+      },
+      message: 'Einstellungen gespeichert',
+    });
+  } catch (error) {
+    console.error('Error updating settings:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Fehler beim Speichern der Einstellungen',
+    });
+  }
+});
+
+// PUT /api/auth/password - Change own password
+router.put('/auth/password', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Aktuelles und neues Passwort erforderlich',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Neues Passwort muss mindestens 6 Zeichen lang sein',
+      });
+    }
+
+    const result = await updateOwnPassword(user.id, currentPassword, newPassword);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: result.error === 'Current password is incorrect'
+          ? 'Aktuelles Passwort ist falsch'
+          : result.error,
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Passwort geändert',
+    });
+  } catch (error) {
+    console.error('Error changing password:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Fehler beim Ändern des Passworts',
+    });
+  }
 });
 
 // ============================================
@@ -662,6 +724,168 @@ router.put('/admin/users/:id/activate', requireAdmin, async (req: Request, res: 
       success: false,
       error: 'Internal Server Error',
       message: 'Fehler beim Freischalten des Benutzers',
+    });
+  }
+});
+
+// POST /api/admin/users - Create a new user (admin only)
+router.post('/admin/users', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const { lssName, password, displayName, badgeColor, allianceMemberId } = req.body;
+
+    if (!lssName || typeof lssName !== 'string' || lssName.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'LSS-Name muss mindestens 2 Zeichen lang sein',
+      });
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Passwort muss mindestens 6 Zeichen lang sein',
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await getUserByLssName(lssName.trim());
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: 'Conflict',
+        message: 'Ein Account mit diesem LSS-Namen existiert bereits',
+      });
+    }
+
+    const user = await createUserAsAdmin(
+      lssName.trim(),
+      password,
+      displayName || null,
+      badgeColor || null,
+      allianceMemberId || null
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        id: user.id,
+        lssName: user.lssName,
+        displayName: user.displayName,
+        badgeColor: user.badgeColor,
+        allianceMemberId: user.allianceMemberId,
+        isActive: user.isActive,
+        isAdmin: user.isAdmin,
+      },
+      message: 'Benutzer erstellt',
+    });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Fehler beim Erstellen des Benutzers',
+    });
+  }
+});
+
+// PUT /api/admin/users/:id - Update a user (admin only)
+router.put('/admin/users/:id', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+
+    if (isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Ungültige User-ID',
+      });
+    }
+
+    const { displayName, badgeColor, allianceMemberId, isActive } = req.body;
+
+    const user = await updateUserAsAdmin(id, {
+      displayName: displayName !== undefined ? displayName : undefined,
+      badgeColor: badgeColor !== undefined ? badgeColor : undefined,
+      allianceMemberId: allianceMemberId !== undefined ? allianceMemberId : undefined,
+      isActive: isActive !== undefined ? isActive : undefined,
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Benutzer nicht gefunden',
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        id: user.id,
+        lssName: user.lssName,
+        displayName: user.displayName,
+        badgeColor: user.badgeColor,
+        allianceMemberId: user.allianceMemberId,
+        isActive: user.isActive,
+        isAdmin: user.isAdmin,
+      },
+      message: 'Benutzer aktualisiert',
+    });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Fehler beim Aktualisieren des Benutzers',
+    });
+  }
+});
+
+// PUT /api/admin/users/:id/password - Reset user password (admin only)
+router.put('/admin/users/:id/password', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+
+    if (isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Ungültige User-ID',
+      });
+    }
+
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Neues Passwort muss mindestens 6 Zeichen lang sein',
+      });
+    }
+
+    const success = await resetUserPassword(id, newPassword);
+
+    if (!success) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Benutzer nicht gefunden',
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Passwort zurückgesetzt',
+    });
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Fehler beim Zurücksetzen des Passworts',
     });
   }
 });

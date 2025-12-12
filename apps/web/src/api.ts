@@ -1,4 +1,4 @@
-import { IncidentsResponse, SSEIncidentMessage, SSEAllianceStatsMessage, SSEMembersMessage, AllianceStatsResponse, AllianceStatsHistoryResponse, MembersResponse, MissionCreditsResponse } from './types';
+import { IncidentsResponse, SSEIncidentMessage, SSEAllianceStatsMessage, SSEMembersMessage, AllianceStatsResponse, AllianceStatsFullResponse, AllianceStatsHistoryResponse, MembersResponse, MissionCreditsResponse } from './types';
 import { getAuthToken, getAuthHeaders } from './hooks/useAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -103,6 +103,18 @@ export function createSSEConnection(callbacks: SSECallbacks): EventSource {
 
 export async function fetchAllianceStats(): Promise<AllianceStatsResponse> {
   const response = await fetch(`${API_URL}/api/alliance/stats`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchAllianceStatsFull(): Promise<AllianceStatsFullResponse> {
+  const response = await fetch(`${API_URL}/api/alliance/stats/full`, {
     headers: getAuthHeaders(),
   });
 

@@ -139,6 +139,7 @@ export async function getAllUsers(): Promise<Omit<User, 'passwordHash'>[]> {
     id: users.id,
     lssName: users.lssName,
     displayName: users.displayName,
+    badgeColor: users.badgeColor,
     allianceMemberId: users.allianceMemberId,
     isActive: users.isActive,
     isAdmin: users.isAdmin,
@@ -155,6 +156,7 @@ export async function getPendingUsers(): Promise<Omit<User, 'passwordHash'>[]> {
     id: users.id,
     lssName: users.lssName,
     displayName: users.displayName,
+    badgeColor: users.badgeColor,
     allianceMemberId: users.allianceMemberId,
     isActive: users.isActive,
     isAdmin: users.isAdmin,
@@ -198,4 +200,100 @@ export async function updateLastLogin(userId: number): Promise<void> {
   await db.update(users)
     .set({ lastLoginAt: new Date() })
     .where(eq(users.id, userId));
+}
+
+// Create user as admin (directly active)
+export async function createUserAsAdmin(
+  lssName: string,
+  password: string,
+  displayName: string | null,
+  badgeColor: string | null,
+  allianceMemberId: number | null
+): Promise<User> {
+  const passwordHash = await hashPassword(password);
+
+  const [newUser] = await db.insert(users).values({
+    lssName,
+    passwordHash,
+    displayName,
+    badgeColor,
+    allianceMemberId,
+    isActive: true,
+    isAdmin: false,
+  }).returning();
+
+  return newUser;
+}
+
+// Update user as admin
+export async function updateUserAsAdmin(
+  userId: number,
+  data: {
+    displayName?: string | null;
+    badgeColor?: string | null;
+    allianceMemberId?: number | null;
+    isActive?: boolean;
+  }
+): Promise<User | null> {
+  const [updated] = await db.update(users)
+    .set(data)
+    .where(eq(users.id, userId))
+    .returning();
+
+  return updated || null;
+}
+
+// Reset user password as admin
+export async function resetUserPassword(userId: number, newPassword: string): Promise<boolean> {
+  const passwordHash = await hashPassword(newPassword);
+
+  const result = await db.update(users)
+    .set({ passwordHash })
+    .where(eq(users.id, userId));
+
+  return (result.rowCount || 0) > 0;
+}
+
+// Update own settings (for regular users)
+export async function updateOwnSettings(
+  userId: number,
+  data: {
+    displayName?: string | null;
+    badgeColor?: string | null;
+  }
+): Promise<User | null> {
+  const [updated] = await db.update(users)
+    .set(data)
+    .where(eq(users.id, userId))
+    .returning();
+
+  return updated || null;
+}
+
+// Update own password
+export async function updateOwnPassword(
+  userId: number,
+  currentPassword: string,
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  // Get current user
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+  if (!user) {
+    return { success: false, error: 'User not found' };
+  }
+
+  // Verify current password
+  const isValid = await verifyPassword(currentPassword, user.passwordHash);
+  if (!isValid) {
+    return { success: false, error: 'Current password is incorrect' };
+  }
+
+  // Update password
+  const passwordHash = await hashPassword(newPassword);
+  await db.update(users)
+    .set({ passwordHash })
+    .where(eq(users.id, userId));
+
+  return { success: true };
 }

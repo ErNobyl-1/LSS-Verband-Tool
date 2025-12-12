@@ -104,6 +104,7 @@ export const users = pgTable('users', {
   lssName: varchar('lss_name', { length: 255 }).notNull().unique(), // LSS Spielername (Login)
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   displayName: varchar('display_name', { length: 255 }), // Echter Name / Anzeigename
+  badgeColor: varchar('badge_color', { length: 7 }), // Hex color for name badges (e.g. #3b82f6)
   allianceMemberId: integer('alliance_member_id'), // References alliance_members(id)
   isActive: boolean('is_active').default(false).notNull(), // Freischaltung durch Admin
   isAdmin: boolean('is_admin').default(false).notNull(),

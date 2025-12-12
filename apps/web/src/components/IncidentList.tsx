@@ -372,7 +372,7 @@ export function IncidentList({ incidents, loading, error }: IncidentListProps) {
   }
 
   return (
-    <div className="divide-y">
+    <div className="space-y-2 p-2">
       {incidents.map((incident) => {
         const statusColor = getStatusColor(incident.status);
         const avgCredits = getCredits(incident.type);
@@ -380,19 +380,19 @@ export function IncidentList({ incidents, loading, error }: IncidentListProps) {
         return (
           <div
             key={incident.id}
-            className="flex hover:bg-gray-50 transition-colors"
+            className="flex bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all overflow-hidden"
           >
             {/* Status indicator stripe */}
             <div className={`w-2 flex-shrink-0 ${statusColor}`} />
 
-            <div className="flex-1 px-4 py-3">
-              <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 px-4 py-4">
+              <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-medium text-gray-900 truncate">
                     {cleanTitle(incident.title)}
                   </h3>
                   {incident.address && (
-                    <p className="text-sm text-gray-500 truncate mt-0.5">
+                    <p className="text-sm text-gray-500 truncate mt-1">
                       {incident.address}
                     </p>
                   )}

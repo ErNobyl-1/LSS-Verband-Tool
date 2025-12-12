@@ -78,6 +78,39 @@ export interface AllianceStatsResponse {
   message?: string;
 }
 
+export interface PeriodChange {
+  creditsChange: number;
+  rankChange: number;
+  oldCredits: number;
+  oldRank: number;
+  recordedAt: string;
+  isPartial: boolean;
+  actualHours: number;
+}
+
+export interface AllianceStatsFull {
+  id: number;
+  allianceId: number;
+  allianceName: string;
+  creditsTotal: number;
+  rank: number;
+  userCount: number | null;
+  userOnlineCount: number | null;
+  recordedAt: string;
+  changes: {
+    '24h': PeriodChange | null;
+    '7d': PeriodChange | null;
+    '1mo': PeriodChange | null;
+    '12mo': PeriodChange | null;
+  };
+}
+
+export interface AllianceStatsFullResponse {
+  success: boolean;
+  data: AllianceStatsFull | null;
+  message?: string;
+}
+
 export interface AllianceStatsHistoryResponse {
   success: boolean;
   data: AllianceStats[];

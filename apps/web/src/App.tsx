@@ -4,9 +4,9 @@ import { Header } from './components/Header';
 import { IncidentList } from './components/IncidentList';
 import { Map } from './components/Map';
 import { LoginPage } from './components/LoginPage';
-import { RegisterPage } from './components/RegisterPage';
-import { PendingPage } from './components/PendingPage';
 import { AdminPage } from './components/AdminPage';
+import { SettingsPage } from './components/SettingsPage';
+import { StatsPage } from './components/StatsPage';
 import { useIncidents } from './hooks/useIncidents';
 import { useAuth, User } from './hooks/useAuth';
 
@@ -117,9 +117,74 @@ function MapPage({ user, onLogout }: PageProps) {
   );
 }
 
+function AdminPageWrapper({ user, onLogout }: PageProps) {
+  const { incidents, connected } = useIncidents();
+
+  const stats = useMemo(() => {
+    return {
+      emergency: incidents.filter((i) => i.category === 'emergency').length,
+      planned: incidents.filter((i) => i.category === 'planned').length,
+      event: incidents.filter((i) => i.category === 'event').length,
+    };
+  }, [incidents]);
+
+  return (
+    <div className="h-screen flex flex-col bg-gray-100">
+      <Header connected={connected} stats={stats} user={user} onLogout={onLogout} />
+
+      <div className="flex-1 overflow-auto">
+        <AdminPage />
+      </div>
+    </div>
+  );
+}
+
+function SettingsPageWrapper({ user, onLogout, onUserUpdate }: PageProps & { onUserUpdate: () => void }) {
+  const { incidents, connected } = useIncidents();
+
+  const stats = useMemo(() => {
+    return {
+      emergency: incidents.filter((i) => i.category === 'emergency').length,
+      planned: incidents.filter((i) => i.category === 'planned').length,
+      event: incidents.filter((i) => i.category === 'event').length,
+    };
+  }, [incidents]);
+
+  return (
+    <div className="h-screen flex flex-col bg-gray-100">
+      <Header connected={connected} stats={stats} user={user} onLogout={onLogout} />
+
+      <div className="flex-1 overflow-auto">
+        <SettingsPage user={user} onUserUpdate={onUserUpdate} />
+      </div>
+    </div>
+  );
+}
+
+function StatsPageWrapper({ user, onLogout }: PageProps) {
+  const { incidents, connected } = useIncidents();
+
+  const stats = useMemo(() => {
+    return {
+      emergency: incidents.filter((i) => i.category === 'emergency').length,
+      planned: incidents.filter((i) => i.category === 'planned').length,
+      event: incidents.filter((i) => i.category === 'event').length,
+    };
+  }, [incidents]);
+
+  return (
+    <div className="h-screen flex flex-col bg-gray-100">
+      <Header connected={connected} stats={stats} user={user} onLogout={onLogout} />
+
+      <div className="flex-1 overflow-auto">
+        <StatsPage />
+      </div>
+    </div>
+  );
+}
+
 function App() {
-  const [showRegister, setShowRegister] = useState(false);
-  const { user, isAuthenticated, isPending, isLoading, error, login, register, logout, refreshUser } = useAuth();
+  const { user, isAuthenticated, isLoading, error, login, logout, refreshUser } = useAuth();
 
   // Show loading spinner while checking auth
   if (isLoading) {
@@ -133,32 +198,12 @@ function App() {
     );
   }
 
-  // Show pending page if user is registered but not approved
-  if (isPending && user) {
-    return (
-      <PendingPage
-        lssName={user.lssName}
-        onLogout={logout}
-        onRefresh={refreshUser}
-      />
-    );
-  }
-
-  // Show login or register page if not authenticated
+  // Show login page if not authenticated
   if (!isAuthenticated) {
-    if (showRegister) {
-      return (
-        <RegisterPage
-          onRegister={register}
-          onSwitchToLogin={() => setShowRegister(false)}
-        />
-      );
-    }
     return (
       <LoginPage
         error={error}
         onLogin={login}
-        onSwitchToRegister={() => setShowRegister(true)}
       />
     );
   }
@@ -167,10 +212,12 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<ListPage user={user!} onLogout={logout} />} />
+        <Route path="/" element={<StatsPageWrapper user={user!} onLogout={logout} />} />
+        <Route path="/incidents" element={<ListPage user={user!} onLogout={logout} />} />
         <Route path="/map" element={<MapPage user={user!} onLogout={logout} />} />
+        <Route path="/settings" element={<SettingsPageWrapper user={user!} onLogout={logout} onUserUpdate={refreshUser} />} />
         {user?.isAdmin && (
-          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin" element={<AdminPageWrapper user={user} onLogout={logout} />} />
         )}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

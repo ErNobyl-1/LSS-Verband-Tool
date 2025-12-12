@@ -3,10 +3,9 @@ import { useState } from 'react';
 interface LoginPageProps {
   error?: string | null;
   onLogin: (lssName: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  onSwitchToRegister?: () => void;
 }
 
-export function LoginPage({ error: externalError, onLogin, onSwitchToRegister }: LoginPageProps) {
+export function LoginPage({ error: externalError, onLogin }: LoginPageProps) {
   const [lssName, setLssName] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -85,19 +84,11 @@ export function LoginPage({ error: externalError, onLogin, onSwitchToRegister }:
           </button>
         </form>
 
-        {onSwitchToRegister && (
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              Noch kein Account?{' '}
-              <button
-                onClick={onSwitchToRegister}
-                className="text-blue-600 hover:text-blue-800 font-medium"
-              >
-                Registrieren
-              </button>
-            </p>
-          </div>
-        )}
+        <div className="mt-6 text-center">
+          <p className="text-xs text-gray-500">
+            Kein Account? Wende dich an einen Administrator.
+          </p>
+        </div>
       </div>
     </div>
   );
