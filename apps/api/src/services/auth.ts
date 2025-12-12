@@ -1,4 +1,4 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { eq, and, gt, lt } from 'drizzle-orm';
 import { db, users, sessions, User } from '../db/index.js';
