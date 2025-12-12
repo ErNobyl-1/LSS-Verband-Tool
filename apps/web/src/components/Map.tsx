@@ -27,7 +27,7 @@ function cleanTitle(title: string) {
 export function Map({ incidents, selectedId, onSelect }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<Map<number, maplibregl.Marker>>(new Map());
+  const markersRef = useRef<globalThis.Map<number, maplibregl.Marker>>(new globalThis.Map());
 
   // Initialize map
   useEffect(() => {

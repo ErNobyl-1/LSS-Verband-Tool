@@ -124,7 +124,7 @@ export async function getAllMembers(allianceId?: number) {
   // Filter out excluded members from results
   const excluded = getExcludedMembers();
   return members.filter(
-    (m) => !excluded.has(m.name.toLowerCase()) && !excluded.has(m.odMemberId.toString())
+    (m) => !excluded.has(m.name.toLowerCase()) && !excluded.has(m.lssMemberId.toString())
   );
 }
 
@@ -144,7 +144,7 @@ export async function getOnlineMembers(allianceId?: number) {
   // Filter out excluded members
   const excluded = getExcludedMembers();
   return members.filter(
-    (m) => !excluded.has(m.name.toLowerCase()) && !excluded.has(m.odMemberId.toString())
+    (m) => !excluded.has(m.name.toLowerCase()) && !excluded.has(m.lssMemberId.toString())
   );
 }
 
