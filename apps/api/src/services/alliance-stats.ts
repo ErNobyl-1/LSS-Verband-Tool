@@ -49,6 +49,40 @@ export async function getLatestAllianceStats() {
   return result[0] || null;
 }
 
+export async function getStatsFrom24hAgo(allianceId: number) {
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  // Get the stats entry closest to 24h ago
+  const result = await db
+    .select()
+    .from(allianceStats)
+    .where(
+      and(
+        eq(allianceStats.allianceId, allianceId),
+        lte(allianceStats.recordedAt, twentyFourHoursAgo)
+      )
+    )
+    .orderBy(desc(allianceStats.recordedAt))
+    .limit(1);
+
+  return result[0] || null;
+}
+
+export async function getLatestAllianceStatsWithChanges() {
+  const latest = await getLatestAllianceStats();
+  if (!latest) return null;
+
+  const stats24hAgo = await getStatsFrom24hAgo(latest.allianceId);
+
+  return {
+    ...latest,
+    change24h: stats24hAgo ? {
+      creditsChange: latest.creditsTotal - stats24hAgo.creditsTotal,
+      rankChange: stats24hAgo.rank - latest.rank, // Positive = improved rank
+    } : null,
+  };
+}
+
 export async function getAllianceStatsHistory(
   allianceId: number,
   options?: {

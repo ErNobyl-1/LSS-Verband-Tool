@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { incidentQuerySchema } from '../validation/schemas.js';
 import { queryIncidents, getIncidentById } from '../services/incidents.js';
 import { addClient, removeClient, getClientCount } from '../services/sse.js';
-import { getLatestAllianceStats, getAllianceStatsHistory, getAggregatedStats } from '../services/alliance-stats.js';
+import { getLatestAllianceStats, getLatestAllianceStatsWithChanges, getAllianceStatsHistory, getAggregatedStats } from '../services/alliance-stats.js';
 import { getAllMembers, getOnlineMembers, getMemberById, getMemberActivityHistory, getMemberCounts } from '../services/alliance-members.js';
 import { getAllMissionCredits, getMissionTypeCacheStats, refreshMissionTypes } from '../services/mission-types.js';
 
@@ -116,10 +116,10 @@ router.get('/health', (req: Request, res: Response) => {
   });
 });
 
-// GET /api/alliance/stats - Get latest alliance stats
+// GET /api/alliance/stats - Get latest alliance stats with 24h changes
 router.get('/alliance/stats', async (req: Request, res: Response) => {
   try {
-    const latest = await getLatestAllianceStats();
+    const latest = await getLatestAllianceStatsWithChanges();
 
     if (!latest) {
       return res.json({

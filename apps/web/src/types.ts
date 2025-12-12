@@ -51,6 +51,10 @@ export interface AllianceStats {
   userCount: number | null;
   userOnlineCount: number | null;
   recordedAt: string;
+  change24h: {
+    creditsChange: number;
+    rankChange: number; // Positive = improved rank
+  } | null;
 }
 
 export interface AllianceStatsResponse {
