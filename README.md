@@ -1,115 +1,58 @@
 # LSS-Verband-Tool
 
-Ein lokales Tool zur Extraktion und Visualisierung von Daten aus dem Browsergame "Leitstellenspiel".
+Ein selbst gehostetes Tool zur Echtzeit-Übersicht und Verwaltung von Verbandseinsätzen im Browsergame [Leitstellenspiel.de](https://www.leitstellenspiel.de).
 
-## Features
+> **Hinweis:** Dies ist ein unabhängiges Fan-Projekt und steht in keiner Verbindung zum Entwickler des Leitstellenspiels.
 
-- **Automatische Datenextraktion** via Headless Browser (Puppeteer)
-- **REST API** mit SSE-Support für Live-Updates
-- **Web Dashboard** mit Filterfunktionen und Kartenansicht
-- **Docker-basiert** für einfaches Setup
-- **Benutzerverwaltung** - Registrierung mit Admin-Freischaltung
+## Was macht dieses Tool?
 
-## Quickstart
+Das Tool extrahiert automatisch Verbandseinsätze aus dem Leitstellenspiel und stellt sie in einem übersichtlichen Dashboard dar - mit Live-Updates, Kartenansicht und Statistiken.
+
+**Hauptfunktionen:**
+- **Live-Dashboard** mit allen Verbandseinsätzen (Notfälle, geplante Einsätze, Großschadenslagen)
+- **Kartenansicht** mit allen Einsatzorten auf einer interaktiven Karte
+- **Statistik-Seite** mit Verbandsstatistiken und Credits-Verlauf
+- **Mitglieder-Status** - Wer ist gerade online? (Echtzeit-Updates alle 5 Sekunden)
+- **Benutzerverwaltung** - Nur freigeschaltete Verbandsmitglieder haben Zugriff
+- **Mobile-optimiert** - Funktioniert auf Smartphone und Tablet
+
+## Screenshots
+
+*(Hier könnten Screenshots eingefügt werden)*
+
+## Quickstart (Lokal)
 
 ```bash
-# 1. Repository klonen (falls noch nicht geschehen)
-git clone <repo-url>
+# 1. Repository klonen
+git clone https://github.com/ernobyl/LSS-Verband-Tool.git
 cd LSS-Verband-Tool
 
-# 2. Environment-Datei erstellen und konfigurieren
+# 2. Konfiguration erstellen
 cp .env.example .env
 
-# 3. LSS Login-Daten und Admin-Passwort in .env eintragen
-# LSS_EMAIL=deine-email@example.com
-# LSS_PASSWORD=dein-passwort
-# ADMIN_PASSWORD=sicheres-admin-passwort
+# 3. In .env die Pflichtfelder ausfüllen:
+#    - LSS_EMAIL und LSS_PASSWORD (Leitstellenspiel-Login)
+#    - ADMIN_PASSWORD (für den Admin-Account)
+#    - POSTGRES_PASSWORD (Datenbank-Passwort)
 
-# 4. Docker Container starten
+# 4. Starten
 docker-compose up -d --build
 
-# 5. Services aufrufen
-# - Web UI: http://localhost:3000
-# - API: http://localhost:3001
+# 5. Öffnen
+# Dashboard: http://localhost:3000
+# API: http://localhost:3001
 ```
 
-## Authentifizierung
+## Server-Deployment (Produktion)
 
-Das Tool verwendet ein Benutzer-System mit Admin-Freischaltung:
-
-1. **Admin-Account**: Wird beim Start automatisch erstellt/aktualisiert
-   - Username: aus `ADMIN_USERNAME` (default: "admin")
-   - Passwort: aus `ADMIN_PASSWORD`
-
-2. **Benutzer-Registrierung**:
-   - Verbandsmitglieder registrieren sich mit LSS-Name und Passwort
-   - Nach Registrierung ist der Account NICHT aktiv
-   - Admin muss den Account erst freischalten
-
-3. **Admin-Freischaltung** (unter `/admin`):
-   - Admin sieht wartende Benutzer
-   - Admin kann Benutzer einem Allianz-Mitglied zuordnen
-   - Admin kann einen Anzeigenamen setzen (z.B. echter Vorname)
-
-## Konfiguration
-
-Die Konfiguration erfolgt über die `.env` Datei:
-
-| Variable | Beschreibung | Default |
-|----------|--------------|---------|
-| `LSS_EMAIL` | Leitstellenspiel Login E-Mail | - |
-| `LSS_PASSWORD` | Leitstellenspiel Passwort | - |
-| `LSS_SCRAPE_INTERVAL_MS` | Intervall der Datenabfrage in ms | 10000 |
-| `LSS_HEADLESS` | Headless Browser Modus | true |
-| `ADMIN_USERNAME` | Admin-Benutzername | admin |
-| `ADMIN_PASSWORD` | Admin-Passwort (erforderlich!) | - |
-| `CORS_ORIGIN` | Erlaubte Origins (kommasepariert) | * |
-| `LOG_LEVEL` | Log-Level (fatal/error/warn/info/debug/trace) | info |
-
-## Projektstruktur
-
-```
-/apps
-  /api          # Backend API (Node.js/Express) + LSS Scraper
-  /web          # Frontend (React + Vite)
-/docs           # Dokumentation
-```
-
-## Funktionsweise
-
-1. Der Server startet einen Headless Chromium Browser
-2. Der Browser loggt sich automatisch bei Leitstellenspiel ein
-3. Alle 10 Sekunden (konfigurierbar) werden die Einsatzdaten extrahiert
-4. Die Daten werden in PostgreSQL gespeichert
-5. Änderungen werden via SSE live an das Web-Dashboard gestreamt
-
-### Extrahierte Einsätze
-
-- **Notfälle (emergency)**: Eigene freigegebene Einsätze, Verbands-Einsätze, Krankentransporte
-- **Geplant (planned)**: Sicherheitswachen
-- **Großschadenslagen (event)**: Verbands-Events
-
-## Dokumentation
-
-- [Architektur](docs/architecture.md)
-- [API Referenz](docs/api.md)
-- [Datenmodell](docs/data-model.md)
-- [Runbook](docs/runbook.md)
-
-## Tech Stack
-
-- **Backend**: Node.js, Express, PostgreSQL, Drizzle ORM, Puppeteer
-- **Frontend**: React, Vite, TailwindCSS, MapLibre GL
-- **Infrastructure**: Docker, Docker Compose
-
-## Server Deployment
+Für den Betrieb auf einem öffentlichen Server steht ein automatisches Setup-Script bereit.
 
 ### Voraussetzungen
-- Frischer Server mit **Debian 13** (empfohlen) oder Rocky Linux 9
-- Root-Zugang
-- Domain die auf den Server zeigt (A-Record)
+- **Server**: VPS oder Root-Server mit min. 2GB RAM
+- **OS**: Debian 12/13 (empfohlen) oder Rocky Linux 9
+- **Domain**: Eine Domain mit A-Record auf die Server-IP
 
-### Automatisches Setup
+### Installation
 
 ```bash
 # 1. Als root auf dem Server einloggen
@@ -121,165 +64,248 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-Das Script installiert und konfiguriert automatisch:
-- **System**: Timezone (Europe/Berlin), 2GB Swap, System-Updates
-- **Sicherheit**: Firewall (ufw), fail2ban, SSH-Härtung, Deploy-User
-- **Docker**: Docker CE + Compose Plugin
-- **Web**: nginx Reverse Proxy, Let's Encrypt SSL (Auto-Renewal)
-- **Monitoring**: Uptime Kuma unter `/status/` (Status-Page & Alerting)
-- **Updates**: Automatische Sicherheitsupdates
-- **Backups**: Tägliches DB-Backup (3:00 Uhr), 7 Tage Retention
+Das Script richtet automatisch ein:
+- System-Hardening (Firewall, fail2ban, SSH-Härtung)
+- Docker + Docker Compose
+- nginx als Reverse Proxy mit Let's Encrypt SSL
+- Uptime Kuma für Status-Monitoring (`/status/`)
+- Automatische Sicherheitsupdates
+- Tägliche Datenbank-Backups (3:00 Uhr)
 
 ### Nach dem Setup
 
-1. **Alle Passwörter sicher speichern** (werden am Ende angezeigt):
-   - Web-Admin Passwort
-   - SSH Deploy-User Passwort
-2. LSS-Zugangsdaten in `.env` eintragen falls noch nicht geschehen
-3. Container neu starten: `docker compose restart`
-4. Zukünftig als `deploy` User einloggen (hat sudo + Docker Rechte)
+1. **Passwörter notieren** - werden am Ende des Scripts angezeigt
+2. **LSS-Zugangsdaten** in `/opt/lss-verband-tool/.env` eintragen
+3. **Container neustarten**: `docker compose restart`
+4. **Zukünftig** als `deploy` User einloggen (hat sudo + Docker Rechte)
 
-### Updates
+## Konfiguration
 
-```bash
-cd /opt/lss-verband-tool
-git pull
-docker compose up -d --build
+Alle Einstellungen erfolgen über die `.env` Datei:
+
+### Pflichtfelder
+
+| Variable | Beschreibung |
+|----------|--------------|
+| `LSS_EMAIL` | Deine Leitstellenspiel E-Mail-Adresse |
+| `LSS_PASSWORD` | Dein Leitstellenspiel Passwort |
+| `ADMIN_PASSWORD` | Passwort für den Admin-Account |
+| `POSTGRES_PASSWORD` | Datenbank-Passwort (mindestens 32 Zeichen empfohlen) |
+| `CORS_ORIGIN` | Erlaubte Domain(s) für API-Zugriff, z.B. `https://verband.example.de` |
+
+### Optionale Einstellungen
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `LSS_SCRAPE_INTERVAL_MS` | 10000 | Wie oft Einsätze abgerufen werden (in ms) |
+| `LSS_MEMBER_TRACKING_INTERVAL_MS` | 60000 | Wie oft Online-Status aktualisiert wird (in ms) |
+| `LSS_ALLIANCE_STATS_INTERVAL_MS` | 300000 | Wie oft Verbandsstatistiken abgerufen werden (5 min) |
+| `LSS_HEADLESS` | true | Browser ohne GUI starten |
+| `LSS_EXCLUDED_MEMBERS` | - | Kommaseparierte Liste von auszuschließenden Mitgliedern |
+| `ADMIN_USERNAME` | admin | Benutzername des Admin-Accounts |
+| `LOG_LEVEL` | info | Log-Level (fatal/error/warn/info/debug/trace) |
+
+### Datenaufbewahrung
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `DATA_RETENTION_INCIDENTS_DAYS` | 4 | Einsätze werden nach X Tagen gelöscht |
+| `DATA_RETENTION_ACTIVITY_DAYS` | 30 | Online/Offline-Logs nach X Tagen gelöscht |
+| `DATA_RETENTION_STATS_AGGREGATE_DAYS` | 30 | Stats werden nach X Tagen aggregiert (1/Tag) |
+
+## Benutzerverwaltung
+
+Das Tool verwendet ein eigenes Authentifizierungssystem:
+
+### Admin-Account
+- Wird automatisch beim Start erstellt/aktualisiert
+- Benutzername: `ADMIN_USERNAME` (default: "admin")
+- Passwort: `ADMIN_PASSWORD` aus der `.env`
+
+### Verbandsmitglieder
+1. Mitglied ruft die Seite auf und gibt LSS-Name + selbstgewähltes Passwort ein
+2. Account wird erstellt, ist aber **nicht aktiv**
+3. Admin geht auf `/admin` und schaltet den Account frei
+4. Admin kann optional einen Anzeigenamen vergeben (z.B. echter Vorname)
+5. Admin kann das Mitglied einem LSS-Mitglied zuordnen (für "Meine Einsätze" Hervorhebung)
+
+### Passwort-Anforderungen
+- Mindestens 8 Zeichen
+- Mindestens ein Buchstabe
+- Mindestens eine Zahl
+- Mindestens ein Sonderzeichen
+
+## Architektur
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Docker Environment                            │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                 API Service (Node.js)                     │   │
+│  │                                                           │   │
+│  │  ┌─────────────────┐  ┌─────────────────────────────┐    │   │
+│  │  │   LSS Scraper   │  │      REST API + SSE         │    │   │
+│  │  │   (Puppeteer)   │  │   - /api/incidents          │    │   │
+│  │  │                 │  │   - /api/members            │    │   │
+│  │  │  Extrahiert:    │  │   - /api/stats              │    │   │
+│  │  │  - Einsätze     │  │   - /api/stream (Live)      │    │   │
+│  │  │  - Mitglieder   │  │   - /api/auth               │    │   │
+│  │  │  - Statistiken  │  │   - /api/admin              │    │   │
+│  │  └─────────────────┘  └─────────────────────────────┘    │   │
+│  └──────────────────────────────┬───────────────────────────┘   │
+│                                 │                                │
+│  ┌──────────────────────────────┴───────────────────────────┐   │
+│  │                   PostgreSQL Database                     │   │
+│  │  - incidents, users, sessions                             │   │
+│  │  - alliance_members, member_activity_log                  │   │
+│  │  - alliance_stats                                         │   │
+│  └───────────────────────────────────────────────────────────┘   │
+│                                 │                                │
+│  ┌──────────────────────────────┴───────────────────────────┐   │
+│  │                 Web Frontend (React + Vite)               │   │
+│  │  - Dashboard mit Filtern                                  │   │
+│  │  - Kartenansicht (MapLibre GL)                           │   │
+│  │  - Statistiken (Chart.js)                                 │   │
+│  │  - Live-Updates via SSE                                   │   │
+│  └───────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌───────────────────────────────────────────────────────────┐   │
+│  │              Uptime Kuma (Status-Monitoring)              │   │
+│  └───────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### Nützliche Befehle
+## Dokumentation
 
-```bash
-cd /opt/lss-verband-tool
+Detaillierte Dokumentation findest du im `/docs` Ordner:
 
-# Logs anzeigen
-docker compose logs -f
+- [Architektur](docs/architecture.md) - Technische Details zur Systemarchitektur
+- [API Referenz](docs/api.md) - Alle API-Endpunkte mit Beispielen
+- [Datenmodell](docs/data-model.md) - Datenbankschema und Tabellen
+- [Runbook](docs/runbook.md) - Betriebshandbuch für Admins
 
-# Nur API Logs
-docker compose logs -f api
+## Tech Stack
 
-# Container neustarten
-docker compose restart
+### Backend
+- **Runtime**: Node.js 20
+- **Framework**: Express.js
+- **Database**: PostgreSQL 16 + Drizzle ORM
+- **Scraping**: Puppeteer + Chromium
+- **Logging**: Pino
 
-# Alles stoppen
-docker compose down
+### Frontend
+- **Framework**: React 18
+- **Build**: Vite
+- **Styling**: TailwindCSS
+- **Maps**: MapLibre GL JS
+- **Charts**: Chart.js
 
-# Neu bauen und starten
-docker compose up -d --build
-```
+### Infrastructure
+- **Container**: Docker + Docker Compose
+- **Reverse Proxy**: nginx
+- **SSL**: Let's Encrypt (Certbot)
+- **Monitoring**: Uptime Kuma
+
+## Sicherheit
+
+- **Passwörter** werden mit bcrypt gehasht (nicht im Klartext gespeichert)
+- **Sessions** sind zeitlich begrenzt und werden automatisch bereinigt
+- **Rate Limiting** schützt gegen Brute-Force (500 Req/15min allgemein, 10 Login-Versuche/15min)
+- **CORS** ist auf konfigurierte Domains beschränkt
+- **Security Headers** (X-Frame-Options, CSP, HSTS via nginx)
+- **Firewall** lässt nur Ports 22, 80, 443 durch
+- **fail2ban** sperrt IPs nach fehlgeschlagenen Login-Versuchen
 
 ## Troubleshooting
 
 ### Scraper startet nicht
-- Prüfe ob `LSS_EMAIL` und `LSS_PASSWORD` in `.env` gesetzt sind
-- Prüfe die Container-Logs: `docker-compose logs api`
+```bash
+# Logs prüfen
+docker-compose logs api
 
-### Login fehlgeschlagen
-- Prüfe deine Login-Daten
-- Das Spiel könnte ein Captcha verlangen - in dem Fall einmal manuell einloggen
+# Häufigste Ursachen:
+# - LSS_EMAIL oder LSS_PASSWORD nicht gesetzt
+# - Falsches Passwort
+# - Captcha im Spiel erforderlich (einmal manuell einloggen)
+```
+
+### Login im Tool fehlgeschlagen
+```bash
+# Container neustarten
+docker-compose restart
+
+# Session manuell löschen (falls nötig)
+docker-compose exec postgres psql -U lss -d lss_tool -c "DELETE FROM sessions;"
+```
 
 ### Browser-Fehler im Container
-- Der Container benötigt ausreichend Shared Memory (`shm_size: '2gb'` ist in docker-compose gesetzt)
-- Bei Problemen: `docker-compose down && docker-compose up -d --build`
+```bash
+# Container benötigt ausreichend Shared Memory
+# In docker-compose.yml: shm_size: '2gb'
 
-## Production Deployment TODO
+# Komplett neu bauen
+docker-compose down
+docker-compose up -d --build
+```
 
-Checkliste für das Deployment auf einem echten Server.
+### Weitere Hilfe
+Detaillierte Troubleshooting-Schritte findest du im [Runbook](docs/runbook.md).
 
-### Kritisch (vor Go-Live)
+## Updates
 
-- [x] **CORS einschränken** - `origin: '*'` auf eigene Domain beschränken
-  - Konfigurierbar via `CORS_ORIGIN` in `.env`
-  - Beispiel: `CORS_ORIGIN=https://verband.ernobyl.de`
-  - Mehrere Domains: `CORS_ORIGIN=https://domain1.de,https://domain2.de`
+```bash
+cd /opt/lss-verband-tool  # Auf Server
+# oder
+cd LSS-Verband-Tool       # Lokal
 
-- [ ] **Starke Passwörter setzen** (Nutzer-Aufgabe beim Deployment)
-  - `ADMIN_PASSWORD` - min. 16 Zeichen, zufällig generiert
-  - `POSTGRES_PASSWORD` - min. 32 Zeichen, zufällig generiert
-  - Generieren: `openssl rand -base64 32`
+git pull
+docker compose up -d --build
+```
 
-- [x] **Rate Limiting einbauen** - Schutz gegen Brute-Force
-  - Allgemein: 500 Requests/15min pro IP
-  - Login: 10 Versuche/15min pro IP (erfolgreiche Logins nicht gezählt)
+## Datenschutz (DSGVO)
 
-- [x] **Passwort-Anforderungen verschärft**
-  - Mindestens 8 Zeichen
-  - Mindestens ein Buchstabe
-  - Mindestens eine Zahl
-  - Mindestens ein Sonderzeichen
+Das Tool enthält eine integrierte Datenschutzerklärung unter `/datenschutz`:
 
-### Hoch (sollte gefixt werden)
+- **Gespeicherte Daten**: LSS-Name, Passwort (gehasht), Online-Status, Einsatzdaten
+- **Speicherdauer**: Einsätze 4 Tage, Aktivitätslogs 30 Tage
+- **Keine Weitergabe** an Dritte
+- **Nur technisch notwendige Cookies** (Session)
 
-- [x] **HTTPS einrichten** - Via `setup.sh`
-  - nginx + Let's Encrypt (Auto-Renewal)
+> **Wichtig für Betreiber**: Informiere deine Verbandsmitglieder über die Datenverarbeitung!
 
-- [x] **Security Headers hinzufügen**
-  - `X-Content-Type-Options: nosniff`
-  - `X-Frame-Options: DENY`
-  - `X-XSS-Protection: 1; mode=block`
-  - `Referrer-Policy: strict-origin-when-cross-origin`
-  - `Permissions-Policy` (keine Kamera/Mikrofon/Geolocation)
-  - HSTS wird von nginx gesetzt
+## Rechtliche Hinweise
 
-- [x] **Firewall konfigurieren** - Via `setup.sh`
-  - ufw/firewalld - nur 22, 80, 443 offen
-
-- [x] **Session-Bereinigung automatisieren**
-  - Läuft automatisch beim Server-Start
-  - Wiederholt sich stündlich
-
-### Mittel (Best Practices)
-
-- [x] **Datenaufbewahrung definieren**
-  - Incidents: Löschen nach 4 Tagen
-  - Activity-Logs: Löschen nach 30 Tagen
-  - Alliance-Stats: Aggregieren nach 30 Tagen (1/Tag), nie löschen
-  - Läuft täglich um 4:00 Uhr (nach Backup)
-
-- [x] **Backup-Strategie**
-  - Automatisches tägliches Backup (3:00 Uhr)
-  - 7 Tage Retention
-  - Manuell: `./backup.sh`
-
-- [x] **Monitoring einrichten**
-  - Erweiterter Health-Endpoint: `GET /api/health`
-  - Prüft: Database, Scraper, Memory, CPU
-  - Uptime Kuma integriert unter `/status/`
-
-- [x] **Logging verbessert**
-  - Strukturierte JSON-Logs via pino
-  - Log-Level steuerbar via `LOG_LEVEL` (fatal, error, warn, info, debug, trace)
-  - Request-Logging für HTTP-Endpunkte
-  - Docker Log-Rotation (max 50MB für API, max 10MB für andere Services)
-
-### Rechtlich/DSGVO
-
-- [ ] **Verbandsmitglieder informieren** (Nutzer-Aufgabe)
-  - Welche Daten werden gespeichert
-  - Wer hat Zugriff
-  - Wie lange werden Daten aufbewahrt
-
-- [x] **Disclaimer auf Login-Seite**
-  - Hinweis auf nicht-kommerzielle Nutzung
-  - Klarstellung: Unabhängiges Fan-Projekt, keine Verbindung zum Spielentwickler
-
-- [x] **Datenschutzerklärung**
-  - Erreichbar unter `/datenschutz` (auch ohne Login)
-  - DSGVO-konform: Datenarten, Zweck, Speicherdauer, Rechte
-
-### Server-Setup
-
-- [x] **Betriebssystem wählen**
-  - **Debian 13** (empfohlen) - minimal, sicher, kostenlos
-
-- [x] **Server einrichten** - Alles via `setup.sh`
-  - System: Timezone, Swap, Updates
-  - Sicherheit: SSH-Härtung, Firewall, fail2ban
-  - Docker + Docker Compose
-  - nginx + Let's Encrypt SSL
-  - Automatische Updates + Backups
-  - Uptime Kuma Status-Monitoring
+- Dies ist ein **nicht-kommerzielles Fan-Projekt**
+- **Kein offizielles Tool** des Leitstellenspiel-Entwicklers
+- Die Nutzung erfolgt auf **eigene Verantwortung**
+- Der Betreiber dieses Tools ist für die **DSGVO-konforme Nutzung** selbst verantwortlich
 
 ## Lizenz
 
-MIT
+MIT License - siehe [LICENSE](LICENSE)
+
+## Danksagungen
+
+### Open-Source-Bibliotheken
+
+Dieses Projekt nutzt zahlreiche Open-Source-Bibliotheken, darunter:
+- [Express.js](https://expressjs.com/) - MIT License
+- [React](https://reactjs.org/) - MIT License
+- [Puppeteer](https://pptr.dev/) - Apache 2.0 License
+- [Drizzle ORM](https://orm.drizzle.team/) - Apache 2.0 License
+- [MapLibre GL JS](https://maplibre.org/) - BSD 3-Clause License
+- [TailwindCSS](https://tailwindcss.com/) - MIT License
+- [Chart.js](https://www.chartjs.org/) - MIT License
+- [PostgreSQL](https://www.postgresql.org/) - PostgreSQL License
+- [Pino](https://getpino.io/) - MIT License
+
+### Entwicklung
+
+Dieses Projekt wurde größtenteils im Dialog mit **Claude** (Anthropic) entwickelt - quasi ein Pair-Programming mit einem KI-Assistenten, der nie Kaffee braucht und nie müde wird. Allerdings hat Claude auch mehrfach versucht, Features einzubauen, die niemand wollte, und musste regelmäßig daran erinnert werden, dass "einfach" wirklich einfach bedeutet.
+
+Falls du Bugs findest: Das war wahrscheinlich Claude. Falls etwas gut funktioniert: Das war definitiv der menschliche Entwickler.
+
+---
+
+**Made with ~~AI~~ ❤️ in Germany**

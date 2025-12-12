@@ -1,152 +1,125 @@
 # API Dokumentation
 
-Base URL: `http://localhost:3001`
+Base URL: `http://localhost:3001` (lokal) oder `https://your-domain.de` (Produktion)
 
 ## Authentifizierung
 
-Alle `/ingest/*` Endpoints erfordern den `X-API-Key` Header:
+Die meisten Endpunkte erfordern eine Authentifizierung via Bearer Token.
+
+### Token erhalten
+
+Nach erfolgreichem Login erhältst du einen Token, der bei allen Anfragen im Header mitgesendet werden muss:
 
 ```
-X-API-Key: your-secret-api-key-change-me
+Authorization: Bearer <token>
 ```
-
-Der Key muss mit der `API_KEY` Environment Variable übereinstimmen.
 
 ---
 
-## Endpoints
+## Auth Endpoints
 
-### POST /ingest/incidents
+### POST /api/auth/login
 
-Nimmt einen oder mehrere Einsätze entgegen und speichert sie (Upsert nach `ls_id`).
+Benutzer einloggen.
+
+**Request Body:**
+```json
+{
+  "lssName": "MeinLSSName",
+  "password": "mein-passwort"
+}
+```
+
+**Response (Erfolg):**
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 1,
+      "lssName": "MeinLSSName",
+      "displayName": "Max",
+      "isActive": true,
+      "isAdmin": false,
+      "allianceMemberId": 123
+    },
+    "token": "eyJhbGciOiJIUzI1NiIs..."
+  }
+}
+```
+
+**Response (Fehler):**
+```json
+{
+  "success": false,
+  "error": "InvalidCredentials",
+  "message": "Ungültige Anmeldedaten"
+}
+```
+
+### POST /api/auth/logout
+
+Benutzer ausloggen.
 
 **Headers:**
 ```
-Content-Type: application/json
-X-API-Key: <api-key>
+Authorization: Bearer <token>
 ```
 
-**Request Body (einzelner Einsatz):**
-```json
-{
-  "ls_id": "alliance_12345",
-  "title": "Brennendes Haus",
-  "type": "Brandeinsatz",
-  "status": "active",
-  "source": "alliance",
-  "lat": 52.5200,
-  "lon": 13.4050,
-  "address": "Musterstraße 1, 12345 Berlin",
-  "raw_json": {
-    "original_id": "12345",
-    "extracted_at": "2024-01-15T10:30:00Z"
-  }
-}
-```
-
-**Request Body (Array):**
-```json
-[
-  {
-    "ls_id": "alliance_12345",
-    "title": "Brennendes Haus",
-    "source": "alliance"
-  },
-  {
-    "ls_id": "alliance_event_67890",
-    "title": "Großeinsatz Stadion",
-    "source": "alliance_event"
-  }
-]
-```
-
-**Pflichtfelder:**
-- `ls_id` (string) - Eindeutige ID des Einsatzes
-- `title` (string) - Titel/Name des Einsatzes
-
-**Optionale Felder:**
-- `type` (string) - Einsatztyp
-- `status` (string) - Status (default: "active")
-- `source` (enum) - "alliance" | "alliance_event" | "own" | "unknown"
-- `lat` (number) - Breitengrad (-90 bis 90)
-- `lon` (number) - Längengrad (-180 bis 180)
-- `address` (string) - Adresse
-- `raw_json` (object) - Beliebige Zusatzdaten
-
-**Response (Erfolg - einzeln):**
+**Response:**
 ```json
 {
   "success": true,
-  "message": "Incident created",
-  "incident": {
+  "message": "Erfolgreich ausgeloggt"
+}
+```
+
+### GET /api/auth/me
+
+Aktuelle Benutzerinformationen abrufen.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
     "id": 1,
-    "lsId": "alliance_12345",
-    "title": "Brennendes Haus",
-    "type": "Brandeinsatz",
-    "status": "active",
-    "source": "alliance",
-    "lat": 52.52,
-    "lon": 13.405,
-    "address": "Musterstraße 1, 12345 Berlin",
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z",
-    "lastSeenAt": "2024-01-15T10:30:00.000Z",
-    "rawJson": { ... }
+    "lssName": "MeinLSSName",
+    "displayName": "Max",
+    "badgeColor": "#3B82F6",
+    "isActive": true,
+    "isAdmin": false,
+    "allianceMemberId": 123
   }
-}
-```
-
-**Response (Erfolg - Array):**
-```json
-{
-  "success": true,
-  "message": "Processed 2 incidents",
-  "created": 1,
-  "updated": 1,
-  "incidents": [ ... ]
-}
-```
-
-**Response (Fehler - 400):**
-```json
-{
-  "error": "Validation Error",
-  "details": [
-    {
-      "path": ["ls_id"],
-      "message": "ls_id is required"
-    }
-  ]
-}
-```
-
-**Response (Fehler - 401/403):**
-```json
-{
-  "error": "Unauthorized",
-  "message": "Missing X-API-Key header"
 }
 ```
 
 ---
 
+## Incidents Endpoints
+
 ### GET /api/incidents
 
-Listet Einsätze mit optionalen Filtern.
+Einsätze abrufen.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
 
 **Query Parameter:**
-| Parameter | Typ    | Default | Beschreibung                                |
-|-----------|--------|---------|---------------------------------------------|
-| source    | string | -       | Filter nach Quelle (alliance, alliance_event, own) |
-| status    | string | -       | Filter nach Status                          |
-| q         | string | -       | Volltextsuche (Titel, ID, Adresse)         |
-| limit     | number | 100     | Maximale Anzahl (1-1000)                   |
-| offset    | number | 0       | Offset für Pagination                       |
 
-**Beispiel:**
-```
-GET /api/incidents?source=alliance&status=active&q=brand&limit=50
-```
+| Parameter | Typ    | Beschreibung |
+|-----------|--------|--------------|
+| category  | string | Filter: `emergency`, `planned`, `event` |
+| source    | string | Filter: `own_shared`, `alliance`, `alliance_event` |
+| limit     | number | Max. Anzahl (default: 100, max: 1000) |
+| offset    | number | Offset für Pagination |
 
 **Response:**
 ```json
@@ -155,23 +128,25 @@ GET /api/incidents?source=alliance&status=active&q=brand&limit=50
   "data": [
     {
       "id": 1,
-      "lsId": "alliance_12345",
-      "title": "Brennendes Haus",
-      "type": "Brandeinsatz",
+      "lsId": "mission_123456",
+      "title": "Brand in Mehrfamilienhaus",
+      "type": "Wohnungsbrand",
       "status": "active",
       "source": "alliance",
-      "lat": 52.52,
-      "lon": 13.405,
+      "category": "emergency",
+      "lat": 52.5200,
+      "lon": 13.4050,
       "address": "Musterstraße 1, 12345 Berlin",
+      "startTime": null,
+      "endTime": null,
+      "participants": ["User1", "User2"],
       "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z",
-      "lastSeenAt": "2024-01-15T10:35:00.000Z",
-      "rawJson": null
+      "updatedAt": "2024-01-15T10:35:00.000Z"
     }
   ],
   "meta": {
-    "total": 150,
-    "limit": 50,
+    "total": 42,
+    "limit": 100,
     "offset": 0
   }
 }
@@ -179,64 +154,180 @@ GET /api/incidents?source=alliance&status=active&q=brand&limit=50
 
 ---
 
-### GET /api/incidents/:id
+## Members Endpoints
 
-Einzelnen Einsatz abrufen.
+### GET /api/members
+
+Verbandsmitglieder abrufen (mit Online-Status).
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
 
 **Response:**
 ```json
 {
   "success": true,
   "data": {
-    "id": 1,
-    "lsId": "alliance_12345",
-    ...
+    "members": [
+      {
+        "id": 123,
+        "name": "Spielername",
+        "isOnline": true,
+        "lastOnlineAt": "2024-01-15T10:30:00.000Z",
+        "lastOfflineAt": "2024-01-15T08:00:00.000Z"
+      }
+    ],
+    "counts": {
+      "total": 10,
+      "online": 3
+    }
   }
-}
-```
-
-**Response (404):**
-```json
-{
-  "error": "Not Found",
-  "message": "Incident not found"
 }
 ```
 
 ---
 
+## Stats Endpoints
+
+### GET /api/stats/alliance
+
+Verbandsstatistiken abrufen.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameter:**
+
+| Parameter | Typ    | Beschreibung |
+|-----------|--------|--------------|
+| days      | number | Zeitraum in Tagen (default: 7, max: 90) |
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "current": {
+      "rank": 1849,
+      "credits": 438194876,
+      "usersOnline": 3,
+      "usersTotal": 6,
+      "recordedAt": "2024-01-15T10:30:00.000Z"
+    },
+    "history": [
+      {
+        "rank": 1850,
+        "credits": 438000000,
+        "usersOnline": 2,
+        "usersTotal": 6,
+        "recordedAt": "2024-01-14T10:30:00.000Z"
+      }
+    ],
+    "changes": {
+      "rankChange": -1,
+      "creditsChange": 194876
+    }
+  }
+}
+```
+
+---
+
+## Admin Endpoints
+
+Alle Admin-Endpoints erfordern einen Admin-Account.
+
+### GET /api/admin/users
+
+Alle Benutzer auflisten.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "lssName": "Admin",
+      "displayName": null,
+      "isActive": true,
+      "isAdmin": true,
+      "allianceMemberId": null,
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "lastLoginAt": "2024-01-15T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+### PUT /api/admin/users/:id
+
+Benutzer bearbeiten (aktivieren, Anzeigename setzen, etc.).
+
+**Request Body:**
+```json
+{
+  "isActive": true,
+  "displayName": "Max",
+  "allianceMemberId": 123,
+  "badgeColor": "#3B82F6"
+}
+```
+
+### DELETE /api/admin/users/:id
+
+Benutzer löschen.
+
+---
+
+## SSE Stream
+
 ### GET /api/stream
 
-Server-Sent Events (SSE) Stream für Live-Updates.
+Server-Sent Events Stream für Live-Updates.
 
-**Headers (Response):**
+**Headers:**
 ```
-Content-Type: text/event-stream
-Cache-Control: no-cache
-Connection: keep-alive
+Authorization: Bearer <token>
 ```
 
 **Events:**
 
-1. **connected** - Initial bei Verbindung
+1. **connected** - Bei Verbindungsaufbau
 ```
 event: connected
 data: {"message":"Connected to SSE stream","timestamp":"2024-01-15T10:30:00.000Z"}
 ```
 
-2. **incident** - Bei einzelnem Incident Update
+2. **incidents** - Bei Einsatz-Updates
 ```
-event: incident
-data: {"type":"created","incident":{...},"timestamp":"2024-01-15T10:30:00.000Z"}
-```
-
-3. **batch** - Bei Batch-Updates
-```
-event: batch
-data: {"type":"batch_upsert","incidents":[...],"count":5,"timestamp":"2024-01-15T10:30:00.000Z"}
+event: incidents
+data: {"incidents":[...],"timestamp":"2024-01-15T10:30:00.000Z"}
 ```
 
-4. **heartbeat** - Alle 30 Sekunden
+3. **deleted** - Bei gelöschten Einsätzen
+```
+event: deleted
+data: {"deletedIds":[1,2,3],"timestamp":"2024-01-15T10:30:00.000Z"}
+```
+
+4. **members** - Bei Mitglieder-Updates
+```
+event: members
+data: {"members":[...],"counts":{"total":10,"online":3}}
+```
+
+5. **alliance_stats** - Bei Statistik-Updates
+```
+event: alliance_stats
+data: {"rank":1849,"credits":438194876,...}
+```
+
+6. **heartbeat** - Alle 30 Sekunden
 ```
 event: heartbeat
 data: {"timestamp":"2024-01-15T10:31:00.000Z","clients":3}
@@ -244,50 +335,61 @@ data: {"timestamp":"2024-01-15T10:31:00.000Z","clients":3}
 
 **JavaScript Beispiel:**
 ```javascript
-const eventSource = new EventSource('http://localhost:3001/api/stream');
-
-eventSource.addEventListener('incident', (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Incident update:', data.type, data.incident);
+const token = localStorage.getItem('lss_session_token');
+const eventSource = new EventSource(`/api/stream`, {
+  headers: { 'Authorization': `Bearer ${token}` }
 });
 
-eventSource.addEventListener('batch', (event) => {
+eventSource.addEventListener('incidents', (event) => {
   const data = JSON.parse(event.data);
-  console.log('Batch update:', data.count, 'incidents');
+  console.log('Incidents update:', data.incidents.length);
+});
+
+eventSource.addEventListener('members', (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Online:', data.counts.online, '/', data.counts.total);
 });
 ```
 
 ---
+
+## Health Endpoint
 
 ### GET /api/health
 
-Health Check Endpoint.
+System-Status prüfen (kein Auth erforderlich).
 
 **Response:**
 ```json
 {
-  "status": "ok",
+  "status": "healthy",
   "timestamp": "2024-01-15T10:30:00.000Z",
-  "sseClients": 2
-}
-```
-
----
-
-### GET /
-
-API Info.
-
-**Response:**
-```json
-{
-  "name": "LSS Verband Tool API",
-  "version": "1.0.0",
-  "endpoints": {
-    "ingest": "/ingest/incidents",
-    "incidents": "/api/incidents",
-    "stream": "/api/stream",
-    "health": "/api/health"
+  "responseTime": "1ms",
+  "uptime": "5d 3h 42m",
+  "checks": {
+    "database": {
+      "status": "up",
+      "latency": "2ms"
+    },
+    "scraper": {
+      "status": "running",
+      "details": {
+        "browserConnected": true,
+        "scrapeCount": 1234,
+        "lastScrapeAt": "2024-01-15T10:30:00.000Z"
+      }
+    },
+    "memory": {
+      "status": "ok",
+      "details": {
+        "usedPercent": 45,
+        "totalMB": 2048,
+        "freeMB": 1126
+      }
+    }
+  },
+  "stats": {
+    "sseClients": 2
   }
 }
 ```
@@ -296,21 +398,38 @@ API Info.
 
 ## Fehlerbehandlung
 
-Alle Fehler folgen dem Format:
+Alle Fehler folgen diesem Format:
 
 ```json
 {
-  "error": "Error Type",
-  "message": "Human readable message",
-  "details": [ ... ]  // Optional, bei Validierungsfehlern
+  "success": false,
+  "error": "ErrorType",
+  "message": "Lesbare Fehlerbeschreibung"
 }
 ```
 
 **HTTP Status Codes:**
-- `200` - Erfolg
-- `201` - Erstellt (neuer Einsatz)
-- `400` - Validierungsfehler
-- `401` - Nicht authentifiziert
-- `403` - Falscher API Key
-- `404` - Nicht gefunden
-- `500` - Server-Fehler
+
+| Code | Bedeutung |
+|------|-----------|
+| 200  | Erfolg |
+| 400  | Ungültige Anfrage / Validierungsfehler |
+| 401  | Nicht authentifiziert |
+| 403  | Keine Berechtigung |
+| 404  | Nicht gefunden |
+| 429  | Rate Limit erreicht |
+| 500  | Server-Fehler |
+
+---
+
+## Rate Limiting
+
+- **Allgemein**: 500 Requests pro 15 Minuten pro IP
+- **Login**: 10 Versuche pro 15 Minuten pro IP
+
+Bei Überschreitung:
+```json
+{
+  "error": "Zu viele Anfragen, bitte später erneut versuchen."
+}
+```

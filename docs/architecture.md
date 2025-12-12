@@ -2,169 +2,285 @@
 
 ## Überblick
 
-Das LSS Verband Tool ist ein lokales System zur Extraktion und Visualisierung von Einsatzdaten aus dem Browsergame "Leitstellenspiel".
+Das LSS Verband Tool ist ein selbst gehostetes System zur Echtzeit-Übersicht von Verbandseinsätzen aus dem Browsergame "Leitstellenspiel.de". Es besteht aus vier Docker-Services und unterstützt mehrere Benutzer mit Authentifizierung.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Docker Environment                             │
-│                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                        API Service (Node.js)                     │    │
-│  │  Port: 3001                                                      │    │
-│  │                                                                  │    │
-│  │  ┌─────────────────────────────────────────────────────────┐    │    │
-│  │  │               LSS Scraper (Puppeteer/Chromium)           │    │    │
-│  │  │  - Headless Browser für Leitstellenspiel                 │    │    │
-│  │  │  - Automatischer Login mit Credentials                   │    │    │
-│  │  │  - Periodische Extraktion (alle 10s)                     │    │    │
-│  │  │  - DOM-Parsing der Mission Lists                         │    │    │
-│  │  │  - Direkter DB-Zugriff (kein externes API)               │    │    │
-│  │  └─────────────────────────────────────────────────────────┘    │    │
-│  │                                                                  │    │
-│  │  Endpoints (read-only):                                          │    │
-│  │  - GET  /api/incidents     → Daten abfragen                     │    │
-│  │  - GET  /api/stream        → SSE Live-Updates                   │    │
-│  │  - GET  /api/health        → Health Check                       │    │
-│  └────────────────────────────┬────────────────────────────────────┘    │
-│                               │                                          │
-│                               │ SQL                                      │
-│                               ▼                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                      PostgreSQL Database                         │    │
-│  │  Port: 5432 (nur intern erreichbar)                              │    │
-│  │                                                                  │    │
-│  │  Tabelle: incidents                                             │    │
-│  │  - Upsert nach ls_id                                            │    │
-│  │  - Timestamps: created_at, updated_at, last_seen_at             │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                               ▲                                          │
-│                               │ HTTP/SSE                                 │
-│  ┌────────────────────────────┴────────────────────────────────────┐    │
-│  │                        Web Service (React)                       │    │
-│  │  Port: 3000                                                      │    │
-│  │                                                                  │    │
-│  │  Features:                                                       │    │
-│  │  - Dashboard mit Filtern                                        │    │
-│  │  - Listenansicht & Kartenansicht                                │    │
-│  │  - Live-Updates via SSE                                         │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────┘
+                                    ┌─────────────────────────────────────┐
+                                    │         Internet / Browser          │
+                                    └─────────────────┬───────────────────┘
+                                                      │
+                                                      │ HTTPS (443)
+                                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                                   Docker Environment                                  │
+│                                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                            nginx (Reverse Proxy)                                 │ │
+│  │  - SSL/TLS Termination (Let's Encrypt)                                          │ │
+│  │  - Routes: / → web:3000, /api → api:3001, /status → uptime-kuma:3001           │ │
+│  │  - Security Headers (HSTS, X-Frame-Options, etc.)                               │ │
+│  └───────────────────────────────────┬─────────────────────────────────────────────┘ │
+│                                      │                                               │
+│      ┌───────────────────────────────┼───────────────────────────────┐               │
+│      │                               │                               │               │
+│      ▼                               ▼                               ▼               │
+│  ┌─────────────┐            ┌─────────────────┐            ┌─────────────────┐      │
+│  │  Web (3000) │            │   API (3001)    │            │ Uptime Kuma     │      │
+│  │             │            │                 │            │ (3001 intern)   │      │
+│  │  React      │◀──────────▶│  Express.js     │            │                 │      │
+│  │  Vite       │   HTTP/    │  Puppeteer      │            │  Monitoring     │      │
+│  │  TailwindCSS│   SSE      │  Drizzle ORM    │            │  Alerting       │      │
+│  │  MapLibre   │            │  Pino Logger    │            │                 │      │
+│  └─────────────┘            └────────┬────────┘            └─────────────────┘      │
+│                                      │                                               │
+│                                      │ SQL                                           │
+│                                      ▼                                               │
+│                             ┌─────────────────┐                                      │
+│                             │ PostgreSQL (DB) │                                      │
+│                             │                 │                                      │
+│                             │  - incidents    │                                      │
+│                             │  - users        │                                      │
+│                             │  - sessions     │                                      │
+│                             │  - members      │                                      │
+│                             │  - stats        │                                      │
+│                             └─────────────────┘                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
 
 ## Komponenten
 
-### 1. LSS Scraper (Puppeteer)
+### 1. Web Frontend (React)
 
-**Aufgabe:** Extrahiert Einsatzdaten via Headless Browser direkt von der Leitstellenspiel-Webseite.
+**Technologie:** React 18, Vite, TailwindCSS, MapLibre GL JS, Chart.js
+
+**Funktion:** Single-Page-Application für die Benutzeroberfläche.
+
+**Seiten:**
+- `/` - Statistik-Dashboard (Startseite)
+- `/incidents` - Einsatzliste (Notfälle + Geplant)
+- `/map` - Kartenansicht aller Einsätze
+- `/settings` - Benutzereinstellungen
+- `/admin` - Benutzerverwaltung (nur Admins)
+- `/datenschutz` - Datenschutzerklärung (öffentlich)
+
+**Features:**
+- Live-Updates via Server-Sent Events (SSE)
+- Responsive Design (Mobile-optimiert)
+- Filterbare Einsatzlisten
+- Interaktive Karte mit Markern
+
+### 2. API Backend (Node.js/Express)
+
+**Technologie:** Node.js 20, Express.js, Drizzle ORM, Puppeteer, Pino
+
+**Funktion:** REST API + SSE Server + Scraper
+
+**Hauptmodule:**
+
+| Modul | Beschreibung |
+|-------|--------------|
+| `lss-scraper.ts` | Headless Browser für Datenextraktion |
+| `auth.ts` | Authentifizierung (Login, Sessions, bcrypt) |
+| `incidents.ts` | Einsatzverwaltung |
+| `alliance-members.ts` | Mitglieder-Tracking |
+| `alliance-stats.ts` | Statistik-Erfassung |
+| `sse.ts` | Server-Sent Events Broadcasting |
+| `data-retention.ts` | Automatische Datenbereinigung |
+
+**API-Struktur:**
+```
+/api
+├── /auth
+│   ├── POST /login
+│   ├── POST /logout
+│   └── GET  /me
+├── /incidents
+│   └── GET  /
+├── /members
+│   └── GET  /
+├── /stats
+│   └── GET  /alliance
+├── /admin
+│   ├── GET  /users
+│   ├── PUT  /users/:id
+│   └── DELETE /users/:id
+├── /stream (SSE)
+└── /health
+```
+
+### 3. LSS Scraper (Puppeteer)
+
+**Technologie:** Puppeteer mit Chromium
+
+**Funktion:** Extrahiert Daten aus dem Leitstellenspiel via Headless Browser.
 
 **Datenquellen:**
-- `#mission_list` - Eigene Einsätze (nur freigegebene)
-- `#mission_list_krankentransporte` - Eigene Krankentransporte (nur freigegebene)
-- `#mission_list_alliance` - Verbandseinsätze
-- `#mission_list_krankentransporte_alliance` - Verbands-Krankentransporte
-- `#mission_list_sicherheitswache` - Eigene Sicherheitswachen (nur freigegebene)
-- `#mission_list_sicherheitswache_alliance` - Verbands-Sicherheitswachen
-- `#mission_list_alliance_event` - Großschadenslagen
+
+| Container-ID | Quelle | Kategorie |
+|--------------|--------|-----------|
+| `#mission_list` | Eigene Einsätze | emergency |
+| `#mission_list_krankentransporte` | Eigene Krankentransporte | emergency |
+| `#mission_list_alliance` | Verbandseinsätze | emergency |
+| `#mission_list_krankentransporte_alliance` | Verbands-Krankentransporte | emergency |
+| `#mission_list_sicherheitswache` | Eigene Sicherheitswachen | planned |
+| `#mission_list_sicherheitswache_alliance` | Verbands-Sicherheitswachen | planned |
+| `#mission_list_alliance_event` | Großschadenslagen | event |
+
+**Scrape-Loops:**
+
+| Loop | Intervall | Funktion |
+|------|-----------|----------|
+| Mission Scrape | 1-10s (konfigurierbar) | Einsätze extrahieren |
+| Member Tracking | 5-60s (konfigurierbar) | Online-Status prüfen |
+| Alliance Stats | 5 min | Verbandsstatistiken |
 
 **Verhalten:**
-- Startet automatisch mit dem API-Server
-- Loggt sich mit konfigurierten Credentials ein
-- Extrahiert alle 10 Sekunden (konfigurierbar)
+- Automatischer Login mit konfigurierten Credentials
 - Re-Login bei Session-Ablauf
-- Retry bei Fehlern
+- Retry bei Fehlern (max. 3 Versuche)
+- Nur freigegebene eigene Einsätze werden erfasst (`panel-success`)
 
-### 2. Backend API (Node.js/Express)
+### 4. PostgreSQL Database
 
-**Technologie:** Node.js 20, Express, Drizzle ORM, PostgreSQL, Puppeteer
+**Technologie:** PostgreSQL 16
 
-**Architektur:**
-- Read-only API für das Web Frontend
-- Keine externen Schreibendpunkte (sicherheitsrelevant)
-- Der Scraper schreibt direkt in die Datenbank
-
-**Hauptfunktionen:**
-- Datenvalidierung mit Zod
-- Upsert-Logik (Update oder Insert basierend auf `ls_id`)
-- SSE Broadcasting für Live-Updates
-- Integrierter LSS Scraper
-
-### 3. PostgreSQL Database
+**Funktion:** Persistente Datenspeicherung
 
 **Schema:** Siehe [data-model.md](data-model.md)
 
 **Features:**
-- JSONB für flexible Rohdaten-Speicherung
+- JSONB für flexible Rohdaten
 - Indizes für performante Abfragen
 - Volume für Datenpersistenz
+- Automatische Backups (via setup.sh)
 
-### 4. Web Frontend (React)
+### 5. Uptime Kuma (Optional)
 
-**Technologie:** React 18, Vite, TailwindCSS, MapLibre GL
+**Technologie:** Uptime Kuma
+
+**Funktion:** Status-Monitoring und Alerting
 
 **Features:**
-- Filterable Einsatzliste (nach Kategorie, Quelle, Status)
-- Detailansicht
-- Kartenansicht mit Markern
-- Live-Updates via SSE
+- Health-Check für API
+- Status-Page unter `/status/`
+- Benachrichtigungen (Discord, Telegram, etc.)
+
+---
 
 ## Datenfluss
 
-### Scrape Flow
+### 1. Scrape Flow
 
 ```
-1. Scraper prüft ob Session aktiv (mission_list vorhanden?)
-2. Falls nicht: Login auf /users/sign_in
-3. DOM-Extraktion aus allen Mission Lists
-4. Filterung: nur freigegebene eigene Einsätze (panel-success)
-5. Upsert in Datenbank
-6. SSE Broadcast an verbundene Clients
-7. Warten auf nächstes Intervall
+1. Scraper startet Chromium
+2. Login auf leitstellenspiel.de mit Credentials
+3. Navigation zur Hauptseite
+4. Loop:
+   a. DOM-Extraktion aus allen Mission Lists
+   b. Filterung: nur freigegebene eigene Einsätze
+   c. Detail-Seiten laden (für Koordinaten/Teilnehmer)
+   d. Upsert in PostgreSQL
+   e. SSE Broadcast an verbundene Clients
+   f. Warten auf nächstes Intervall
 ```
 
-### Query Flow
+### 2. Member Tracking Flow
 
 ```
-1. Web UI: GET /api/incidents?category=emergency&source=alliance
-2. API baut SQL Query mit Drizzle
-3. Paginierte Response mit Meta-Daten
-4. UI rendert Liste/Karte
+1. HTTP Request zu /api/allianceinfo (mit Session-Cookies)
+2. Parse JSON Response (Member-Liste mit Online-Status)
+3. Vergleich mit DB:
+   - Neue Member → INSERT
+   - Status geändert → UPDATE + Activity Log
+4. SSE Broadcast: members Event
 ```
 
-### Live Update Flow
+### 3. Stats Flow
 
 ```
-1. Web UI öffnet EventSource zu /api/stream
-2. Bei jedem Scrape: API sendet SSE Event mit geänderten Daten
-3. UI empfängt Event, updated lokalen State
-4. Re-Render ohne Page Reload
+1. HTTP Request zu /api/allianceinfo
+2. Parse: rank, credits, users_online, users_total
+3. INSERT in alliance_stats
+4. Berechne Änderungen (vs. letzter Eintrag)
+5. SSE Broadcast: alliance_stats Event
 ```
 
-## Kategorien und Quellen
+### 4. Auth Flow
 
-### Kategorien (category)
-- **emergency**: Notfälle (normale Einsätze + Krankentransporte)
-- **planned**: Geplante Einsätze (Sicherheitswachen)
-- **event**: Großschadenslagen
+```
+1. User: POST /api/auth/login {lssName, password}
+2. Server: Prüfe Credentials (bcrypt.compare)
+3. Server: Erstelle Session (random token, 24h TTL)
+4. Client: Speichere Token in localStorage
+5. Client: Alle Requests mit Header "Authorization: Bearer <token>"
+6. Server: Middleware prüft Token bei jedem Request
+```
 
-### Quellen (source)
-- **own_shared**: Eigene freigegebene Einsätze
-- **alliance**: Verbands-Einsätze
-- **alliance_event**: Verbands-Großschadenslagen
+### 5. SSE Flow
+
+```
+1. Client: EventSource('/api/stream')
+2. Server: Registriert Client
+3. Bei Datenänderung:
+   - Server: Sendet Event an alle Clients
+   - Client: Empfängt Event, updated State
+4. Heartbeat alle 30s (Verbindung prüfen)
+5. Client disconnect: Automatisch entfernt
+```
+
+---
 
 ## Sicherheit
 
-- LSS-Credentials werden nur im Server verwendet (nicht im Browser)
-- **Keine externen Schreibendpunkte** - Die API ist read-only
-- Der Scraper schreibt direkt in die Datenbank ohne HTTP-Schnittstelle
-- CORS für lokale Entwicklung konfiguriert
-- Headless Browser läuft isoliert im Container
-- Datenbank ist nur intern erreichbar (kein Port-Mapping nach außen)
+### Authentifizierung
+- Passwörter mit bcrypt gehasht (Kostenfaktor 10)
+- Sessions mit zufälligen Tokens (32 Bytes)
+- Token-Ablauf nach 24 Stunden
+- Automatische Session-Bereinigung
+
+### Rate Limiting
+- 500 Requests/15min allgemein
+- 10 Login-Versuche/15min
+- Erfolgreiche Logins nicht gezählt
+
+### CORS
+- Konfigurierbar via `CORS_ORIGIN`
+- Nur angegebene Domains erlaubt
+- Credentials erlaubt
+
+### Security Headers
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `X-XSS-Protection: 1; mode=block`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- HSTS via nginx
+
+### Netzwerk
+- PostgreSQL nur intern erreichbar (kein Port-Mapping)
+- Uptime Kuma nur über Reverse Proxy
+- Firewall: nur 22, 80, 443 offen
+
+---
 
 ## Skalierung
 
-Das System ist für lokale Nutzung optimiert:
-- Single-User Szenario
-- Niedrige Request-Rate (alle 10s)
-- Moderate Datenmenge (typisch < 1000 Einsätze)
+Das System ist für kleine bis mittlere Verbände optimiert:
 
-Für Multi-User oder höhere Last müssten Connection Pooling und Rate Limiting erweitert werden.
+| Metrik | Kapazität |
+|--------|-----------|
+| Benutzer | 10-50 gleichzeitig |
+| Einsätze | < 1000 aktiv |
+| SSE Clients | < 100 |
+| Scrape-Rate | 1 Request/Sekunde |
+
+**Limitierungen:**
+- Single-Node (kein Cluster)
+- Keine horizontale Skalierung
+- Browser-basiertes Scraping (ressourcenintensiv)
+
+**Für größere Installationen:**
+- Scrape-Intervall erhöhen
+- Data Retention verkürzen
+- Mehr RAM für Chromium
