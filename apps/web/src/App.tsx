@@ -7,6 +7,7 @@ import { LoginPage } from './components/LoginPage';
 import { AdminPage } from './components/AdminPage';
 import { SettingsPage } from './components/SettingsPage';
 import { StatsPage } from './components/StatsPage';
+import { PrivacyPage } from './components/PrivacyPage';
 import { useIncidents } from './hooks/useIncidents';
 import { useAuth, User } from './hooks/useAuth';
 
@@ -185,7 +186,7 @@ function StatsPageWrapper({ user, onLogout }: PageProps) {
   );
 }
 
-function App() {
+function AppContent() {
   const { user, isAuthenticated, isLoading, error, login, logout, refreshUser } = useAuth();
 
   // Show loading spinner while checking auth
@@ -212,16 +213,25 @@ function App() {
 
   // Show main app if authenticated
   return (
+    <Routes>
+      <Route path="/" element={<StatsPageWrapper user={user!} onLogout={logout} />} />
+      <Route path="/incidents" element={<ListPage user={user!} onLogout={logout} />} />
+      <Route path="/map" element={<MapPage user={user!} onLogout={logout} />} />
+      <Route path="/settings" element={<SettingsPageWrapper user={user!} onLogout={logout} onUserUpdate={refreshUser} />} />
+      {user?.isAdmin && (
+        <Route path="/admin" element={<AdminPageWrapper user={user} onLogout={logout} />} />
+      )}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<StatsPageWrapper user={user!} onLogout={logout} />} />
-        <Route path="/incidents" element={<ListPage user={user!} onLogout={logout} />} />
-        <Route path="/map" element={<MapPage user={user!} onLogout={logout} />} />
-        <Route path="/settings" element={<SettingsPageWrapper user={user!} onLogout={logout} onUserUpdate={refreshUser} />} />
-        {user?.isAdmin && (
-          <Route path="/admin" element={<AdminPageWrapper user={user} onLogout={logout} />} />
-        )}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/datenschutz" element={<PrivacyPage />} />
+        <Route path="/*" element={<AppContent />} />
       </Routes>
     </BrowserRouter>
   );

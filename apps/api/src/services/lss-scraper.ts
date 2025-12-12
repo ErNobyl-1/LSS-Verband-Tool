@@ -316,17 +316,27 @@ class LssScraper {
   }
 
   private async fetchAndTrackMembers(): Promise<void> {
-    if (!this.page) return;
+    if (!this.browser) return;
 
     try {
-      // Use the existing session to fetch the API endpoint
-      const response = await this.page.evaluate(async () => {
-        const res = await fetch('/api/allianceinfo');
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
-        return await res.json();
+      // Get cookies from browser context - works independently of page navigation
+      const context = this.browser.defaultBrowserContext();
+      const cookies = await context.cookies(this.config.baseUrl);
+      const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+      // Make direct HTTP request with session cookies
+      const res = await fetch(`${this.config.baseUrl}/api/allianceinfo`, {
+        headers: {
+          'Cookie': cookieHeader,
+          'Accept': 'application/json',
+        },
       });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const response = await res.json();
 
       if (response && typeof response.id === 'number' && Array.isArray(response.users)) {
         const result = await upsertMembers(response.id, response.users);

@@ -7,7 +7,7 @@ Ein lokales Tool zur Extraktion und Visualisierung von Daten aus dem Browsergame
 - **Automatische Datenextraktion** via Headless Browser (Puppeteer)
 - **REST API** mit SSE-Support für Live-Updates
 - **Web Dashboard** mit Filterfunktionen und Kartenansicht
-- **Docker-basiert** fur einfaches Setup
+- **Docker-basiert** für einfaches Setup
 - **Benutzerverwaltung** - Registrierung mit Admin-Freischaltung
 
 ## Quickstart
@@ -254,14 +254,18 @@ Checkliste für das Deployment auf einem echten Server.
 
 ### Rechtlich/DSGVO
 
-- [ ] **Verbandsmitglieder informieren**
+- [ ] **Verbandsmitglieder informieren** (Nutzer-Aufgabe)
   - Welche Daten werden gespeichert
   - Wer hat Zugriff
   - Wie lange werden Daten aufbewahrt
 
-- [ ] **Impressum** (wenn öffentlich erreichbar)
+- [x] **Disclaimer auf Login-Seite**
+  - Hinweis auf nicht-kommerzielle Nutzung
+  - Klarstellung: Unabhängiges Fan-Projekt, keine Verbindung zum Spielentwickler
 
-- [ ] **Datenschutzerklärung** (optional, aber empfohlen)
+- [x] **Datenschutzerklärung**
+  - Erreichbar unter `/datenschutz` (auch ohne Login)
+  - DSGVO-konform: Datenarten, Zweck, Speicherdauer, Rechte
 
 ### Server-Setup
 

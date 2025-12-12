@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 interface LoginPageProps {
   error?: string | null;
@@ -87,6 +88,29 @@ export function LoginPage({ error: externalError, onLogin }: LoginPageProps) {
         <div className="mt-6 text-center">
           <p className="text-xs text-gray-500">
             Kein Account? Wende dich an einen Administrator.
+          </p>
+        </div>
+
+        {/* Disclaimer & Datenschutz */}
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <p className="text-xs text-gray-400 text-center leading-relaxed">
+            Dies ist eine nicht-kommerzielle Anwendung zur internen Verwaltung eines Verbandes
+            im Spiel{' '}
+            <a
+              href="https://www.leitstellenspiel.de"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:underline"
+            >
+              Leitstellenspiel.de
+            </a>
+            . Diese Seite ist ein unabhängiges Fan-Projekt und steht in keiner
+            Verbindung zum Entwickler des Spiels.
+          </p>
+          <p className="text-xs text-center mt-2">
+            <Link to="/datenschutz" className="text-blue-500 hover:underline">
+              Datenschutzerklärung
+            </Link>
           </p>
         </div>
       </div>
