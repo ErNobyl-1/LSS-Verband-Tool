@@ -116,6 +116,22 @@ export async function runMigrations(existingPool?: pg.Pool): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS member_activity_log_recorded_at_idx ON member_activity_log(recorded_at)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS member_activity_log_member_time_idx ON member_activity_log(lss_member_id, recorded_at)`);
 
+  // ============================================
+  // MISSION TYPES TABLE (cached from LSS API)
+  // ============================================
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS mission_types (
+      id SERIAL PRIMARY KEY,
+      mission_type_id VARCHAR(50) NOT NULL UNIQUE,
+      name VARCHAR(500) NOT NULL,
+      average_credits INTEGER NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+    )
+  `);
+
+  // Mission types index
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS mission_types_mission_type_id_idx ON mission_types(mission_type_id)`);
+
   console.log('[DB] Database migrations completed successfully!');
 
   // Only close pool if we created it

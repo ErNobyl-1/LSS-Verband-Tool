@@ -83,3 +83,17 @@ export const memberActivityLog = pgTable('member_activity_log', {
 
 export type MemberActivityLog = typeof memberActivityLog.$inferSelect;
 export type NewMemberActivityLog = typeof memberActivityLog.$inferInsert;
+
+// Mission types - cached from LSS API for average credits lookup
+export const missionTypes = pgTable('mission_types', {
+  id: serial('id').primaryKey(),
+  missionTypeId: varchar('mission_type_id', { length: 50 }).notNull().unique(), // e.g. "0", "1", "1/a", "2-0"
+  name: varchar('name', { length: 500 }).notNull(),
+  averageCredits: integer('average_credits').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  missionTypeIdIdx: uniqueIndex('mission_types_mission_type_id_idx').on(table.missionTypeId),
+}));
+
+export type MissionType = typeof missionTypes.$inferSelect;
+export type NewMissionType = typeof missionTypes.$inferInsert;

@@ -1,4 +1,5 @@
 import { Incident } from '../types';
+import { useMissionCredits } from '../hooks/useMissionCredits';
 
 interface IncidentListProps {
   incidents: Incident[];
@@ -15,9 +16,9 @@ function getStatusColor(status: string | null) {
   return colors[status || 'yellow'] || colors.yellow;
 }
 
-function formatTime(dateString: string) {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+function formatCredits(credits: number | null): string {
+  if (credits === null) return '';
+  return `⌀ ${credits.toLocaleString('de-DE')} ¢`;
 }
 
 function cleanTitle(title: string) {
@@ -25,6 +26,8 @@ function cleanTitle(title: string) {
 }
 
 export function IncidentList({ incidents, loading, error }: IncidentListProps) {
+  const { getCredits } = useMissionCredits();
+
   if (loading && incidents.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -53,6 +56,7 @@ export function IncidentList({ incidents, loading, error }: IncidentListProps) {
     <div className="divide-y">
       {incidents.map((incident) => {
         const statusColor = getStatusColor(incident.status);
+        const avgCredits = getCredits(incident.type);
 
         return (
           <div
@@ -74,23 +78,18 @@ export function IncidentList({ incidents, loading, error }: IncidentListProps) {
                     </p>
                   )}
                 </div>
-                <div className="text-xs text-gray-400">
-                  {formatTime(incident.lastSeenAt)}
-                </div>
+                {avgCredits !== null && (
+                  <div className="text-sm font-medium text-gray-600 whitespace-nowrap">
+                    {formatCredits(avgCredits)}
+                  </div>
+                )}
               </div>
 
-              {(incident.type || (incident.lat && incident.lon)) && (
+              {incident.lat && incident.lon && (
                 <div className="flex items-center gap-2 mt-1">
-                  {incident.type && (
-                    <span className="text-xs text-gray-500 truncate">
-                      {incident.type}
-                    </span>
-                  )}
-                  {incident.lat && incident.lon && (
-                    <span className="text-xs text-gray-400" title="Hat Koordinaten">
-                      📍
-                    </span>
-                  )}
+                  <span className="text-xs text-gray-400" title="Hat Koordinaten">
+                    📍
+                  </span>
                 </div>
               )}
             </div>

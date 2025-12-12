@@ -4,6 +4,7 @@ import { queryIncidents, getIncidentById } from '../services/incidents.js';
 import { addClient, removeClient, getClientCount } from '../services/sse.js';
 import { getLatestAllianceStats, getAllianceStatsHistory, getAggregatedStats } from '../services/alliance-stats.js';
 import { getAllMembers, getOnlineMembers, getMemberById, getMemberActivityHistory, getMemberCounts } from '../services/alliance-members.js';
+import { getAllMissionCredits, getMissionTypeCacheStats, refreshMissionTypes } from '../services/mission-types.js';
 
 const router = Router();
 
@@ -339,6 +340,51 @@ router.get('/members/:id/activity', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error fetching member activity:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// ============================================
+// MISSION TYPES ENDPOINTS
+// ============================================
+
+// GET /api/mission-credits - Get all mission type credits (for frontend lookup)
+router.get('/mission-credits', async (req: Request, res: Response) => {
+  try {
+    const credits = getAllMissionCredits();
+    const stats = getMissionTypeCacheStats();
+
+    return res.json({
+      success: true,
+      data: credits,
+      meta: {
+        count: stats.count,
+        lastUpdate: stats.lastUpdate?.toISOString() || null,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching mission credits:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// POST /api/mission-credits/refresh - Manually refresh mission credits from LSS API
+router.post('/mission-credits/refresh', async (req: Request, res: Response) => {
+  try {
+    const count = await refreshMissionTypes();
+
+    return res.json({
+      success: true,
+      message: `Refreshed ${count} mission types from LSS API`,
+    });
+  } catch (error) {
+    console.error('Error refreshing mission credits:', error);
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',

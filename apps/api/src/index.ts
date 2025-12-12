@@ -4,6 +4,7 @@ import cors from 'cors';
 import apiRoutes from './routes/api.js';
 import { lssScraper } from './services/lss-scraper.js';
 import { runMigrations } from './db/migrate.js';
+import { initializeMissionTypes } from './services/mission-types.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -43,6 +44,7 @@ app.get('/', (req, res) => {
       allianceStatsHistory: '/api/alliance/stats/history',
       members: '/api/members',
       membersOnline: '/api/members/online',
+      missionCredits: '/api/mission-credits',
     },
   });
 });
@@ -61,6 +63,9 @@ async function startServer() {
   try {
     // Run database migrations before starting
     await runMigrations();
+
+    // Initialize mission types cache
+    await initializeMissionTypes();
 
     app.listen(Number(PORT), HOST, () => {
       console.log(`🚀 LSS Verband Tool API running at http://${HOST}:${PORT}`);

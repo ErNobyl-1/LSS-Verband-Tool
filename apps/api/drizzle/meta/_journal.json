@@ -8,6 +8,20 @@
       "when": 1765542234418,
       "tag": "0000_breezy_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1765544986772,
+      "tag": "0001_special_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1765545100000,
+      "tag": "0002_add_mission_types",
+      "breakpoints": true
     }
   ]
 }

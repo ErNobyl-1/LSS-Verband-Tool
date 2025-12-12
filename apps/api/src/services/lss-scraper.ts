@@ -74,6 +74,15 @@ class LssScraper {
     try {
       await this.initBrowser();
       await this.ensureLoggedIn();
+
+      // Fetch alliance stats and members immediately after login (before starting loops)
+      console.log('[LSS-Scraper] Fetching initial data after login...');
+      await Promise.all([
+        this.fetchAllianceStats(),
+        this.fetchAndTrackMembers(),
+      ]);
+      console.log('[LSS-Scraper] Initial data fetched successfully');
+
       this.startScrapeLoop();
       this.startAllianceStatsLoop();
       this.startMemberTrackingLoop();
@@ -237,10 +246,8 @@ class LssScraper {
   private startAllianceStatsLoop(): void {
     console.log('[LSS-Scraper] Starting alliance stats loop');
 
-    // Initial fetch
-    this.fetchAllianceStats();
-
     // Set up interval (default: every 5 minutes)
+    // Initial fetch already done in start()
     this.allianceStatsIntervalId = setInterval(() => {
       this.fetchAllianceStats();
     }, this.config.allianceStatsInterval);
@@ -272,10 +279,8 @@ class LssScraper {
   private startMemberTrackingLoop(): void {
     console.log('[LSS-Scraper] Starting member tracking loop');
 
-    // Initial fetch
-    this.fetchAndTrackMembers();
-
     // Set up interval (default: every 1 minute)
+    // Initial fetch already done in start()
     this.memberTrackingIntervalId = setInterval(() => {
       this.fetchAndTrackMembers();
     }, this.config.memberTrackingInterval);
@@ -298,8 +303,8 @@ class LssScraper {
         const result = await upsertMembers(response.id, response.users);
 
         // Filter for logging (to show accurate counts)
-        const filteredMembers = filterExcludedMembers(response.users);
-        const onlineCount = filteredMembers.filter((m: { online: boolean }) => m.online).length;
+        const filteredMembers = filterExcludedMembers(response.users as Array<{ id: number; name: string; online: boolean }>);
+        const onlineCount = filteredMembers.filter((m) => m.online).length;
 
         console.log(
           `[LSS-Scraper] Members: ${filteredMembers.length} total, ${onlineCount} online ` +

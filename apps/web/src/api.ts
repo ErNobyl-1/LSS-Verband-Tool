@@ -1,4 +1,4 @@
-import { IncidentsResponse, SSEMessage, AllianceStatsResponse, AllianceStatsHistoryResponse, MembersResponse } from './types';
+import { IncidentsResponse, SSEMessage, AllianceStatsResponse, AllianceStatsHistoryResponse, MembersResponse, MissionCreditsResponse } from './types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -100,6 +100,16 @@ export async function fetchAllianceStatsHistory(
 export async function fetchMembers(onlineOnly = false): Promise<MembersResponse> {
   const params = onlineOnly ? '?online_only=true' : '';
   const response = await fetch(`${API_URL}/api/members${params}`);
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchMissionCredits(): Promise<MissionCreditsResponse> {
+  const response = await fetch(`${API_URL}/api/mission-credits`);
 
   if (!response.ok) {
     throw new Error(`API Error: ${response.status}`);

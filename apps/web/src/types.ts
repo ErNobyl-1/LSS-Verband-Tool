@@ -91,3 +91,12 @@ export interface MembersResponse {
     online: number;
   };
 }
+
+export interface MissionCreditsResponse {
+  success: boolean;
+  data: Record<string, number>; // mission_type_id -> average_credits
+  meta: {
+    count: number;
+    lastUpdate: string | null;
+  };
+}
