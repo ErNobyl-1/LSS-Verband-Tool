@@ -29,7 +29,6 @@ docker-compose up -d --build
 # 5. Services aufrufen
 # - Web UI: http://localhost:3000
 # - API: http://localhost:3001
-# - Adminer (DB): http://localhost:8080
 ```
 
 ## Konfiguration
@@ -42,7 +41,6 @@ Die Konfiguration erfolgt über die `.env` Datei:
 | `LSS_PASSWORD` | Leitstellenspiel Passwort | - |
 | `LSS_SCRAPE_INTERVAL_MS` | Intervall der Datenabfrage in ms | 10000 |
 | `LSS_HEADLESS` | Headless Browser Modus | true |
-| `API_KEY` | API-Schlüssel für Authentifizierung | - |
 
 ## Projektstruktur
 

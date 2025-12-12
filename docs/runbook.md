@@ -56,12 +56,6 @@ docker-compose logs -f api
 
 - **Dashboard**: http://localhost:3000
 - **API**: http://localhost:3001
-- **Adminer (DB Admin)**: http://localhost:8080
-  - System: PostgreSQL
-  - Server: postgres
-  - Benutzer: lss
-  - Passwort: lss_secret_password
-  - Datenbank: lss_tool
 
 ## Betrieb
 
@@ -124,10 +118,6 @@ Der Scraper loggt seinen Status:
 
 ### Datenbank
 
-**Via Adminer (http://localhost:8080):**
-1. Einloggen mit o.g. Credentials
-2. SQL Tab für Abfragen
-
 **Via psql:**
 ```bash
 docker-compose exec postgres psql -U lss -d lss_tool
@@ -177,17 +167,14 @@ Dann Container neu starten - der Browser wird sichtbar gestartet (funktioniert n
 # Health Check
 curl http://localhost:3001/api/health
 
-# Manueller Ingest-Test
-curl -X POST http://localhost:3001/ingest/incidents \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-secret-api-key-change-me" \
-  -d '[{"ls_id":"test_1","title":"Test Einsatz","source":"alliance","category":"emergency"}]'
-
 # Incidents abrufen
 curl "http://localhost:3001/api/incidents?limit=5"
 
 # Nach Kategorie filtern
 curl "http://localhost:3001/api/incidents?category=emergency"
+
+# Nach Quelle filtern
+curl "http://localhost:3001/api/incidents?source=alliance"
 ```
 
 ### Web UI debuggen
@@ -210,7 +197,6 @@ docker-compose up -d postgres
 
 # Environment setzen
 export DATABASE_URL="postgresql://lss:lss_secret_password@localhost:5432/lss_tool"
-export API_KEY="your-secret-api-key-change-me"
 export LSS_EMAIL="deine-email@example.com"
 export LSS_PASSWORD="dein-passwort"
 

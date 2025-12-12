@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import ingestRoutes from './routes/ingest.js';
 import apiRoutes from './routes/api.js';
 import { lssScraper } from './services/lss-scraper.js';
 
@@ -11,11 +10,11 @@ const HOST = process.env.API_HOST || '0.0.0.0';
 
 // Middleware
 app.use(cors({
-  origin: '*', // Allow all origins for local development
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-API-Key'],
+  origin: '*',
+  methods: ['GET', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
 }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json());
 
 // Request logging
 app.use((req, res, next) => {
@@ -27,8 +26,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Routes
-app.use('/ingest', ingestRoutes);
+// Routes (read-only API for frontend)
 app.use('/api', apiRoutes);
 
 // Root endpoint
@@ -37,7 +35,6 @@ app.get('/', (req, res) => {
     name: 'LSS Verband Tool API',
     version: '1.0.0',
     endpoints: {
-      ingest: '/ingest/incidents',
       incidents: '/api/incidents',
       stream: '/api/stream',
       health: '/api/health',
@@ -58,7 +55,6 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 app.listen(Number(PORT), HOST, () => {
   console.log(`🚀 LSS Verband Tool API running at http://${HOST}:${PORT}`);
   console.log(`📡 SSE stream available at http://${HOST}:${PORT}/api/stream`);
-  console.log(`🔑 API Key authentication enabled`);
 
   // Start the LSS scraper if credentials are configured
   if (process.env.LSS_EMAIL && process.env.LSS_PASSWORD) {

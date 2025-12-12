@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-// Schema for incoming incident data
+// Internal schema for incident data (used by scraper)
 export const incidentInputSchema = z.object({
-  ls_id: z.string().min(1, 'ls_id is required'),
-  title: z.string().min(1, 'title is required').max(500),
+  ls_id: z.string().min(1),
+  title: z.string().min(1).max(500),
   type: z.string().max(100).optional().nullable(),
   status: z.string().max(50).optional().default('active'),
   source: z.enum(['alliance', 'alliance_event', 'own', 'own_shared', 'unknown']).optional().default('unknown'),
@@ -14,13 +14,7 @@ export const incidentInputSchema = z.object({
   raw_json: z.record(z.any()).optional().nullable(),
 });
 
-// Allow both single object and array
-export const incidentIngestSchema = z.union([
-  incidentInputSchema,
-  z.array(incidentInputSchema),
-]);
-
-// Query parameters for listing incidents
+// Query parameters for listing incidents (API)
 export const incidentQuerySchema = z.object({
   source: z.enum(['alliance', 'alliance_event', 'own', 'own_shared', 'unknown']).optional(),
   category: z.enum(['emergency', 'planned', 'event']).optional(),

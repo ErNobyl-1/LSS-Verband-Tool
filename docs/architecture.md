@@ -18,10 +18,10 @@ Das LSS Verband Tool ist ein lokales System zur Extraktion und Visualisierung vo
 │  │  │  - Automatischer Login mit Credentials                   │    │    │
 │  │  │  - Periodische Extraktion (alle 10s)                     │    │    │
 │  │  │  - DOM-Parsing der Mission Lists                         │    │    │
+│  │  │  - Direkter DB-Zugriff (kein externes API)               │    │    │
 │  │  └─────────────────────────────────────────────────────────┘    │    │
 │  │                                                                  │    │
-│  │  Endpoints:                                                      │    │
-│  │  - POST /ingest/incidents  → Daten empfangen (Auth required)    │    │
+│  │  Endpoints (read-only):                                          │    │
 │  │  - GET  /api/incidents     → Daten abfragen                     │    │
 │  │  - GET  /api/stream        → SSE Live-Updates                   │    │
 │  │  - GET  /api/health        → Health Check                       │    │
@@ -31,7 +31,7 @@ Das LSS Verband Tool ist ein lokales System zur Extraktion und Visualisierung vo
 │                               ▼                                          │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │                      PostgreSQL Database                         │    │
-│  │  Port: 5432                                                      │    │
+│  │  Port: 5432 (nur intern erreichbar)                              │    │
 │  │                                                                  │    │
 │  │  Tabelle: incidents                                             │    │
 │  │  - Upsert nach ls_id                                            │    │
@@ -47,12 +47,6 @@ Das LSS Verband Tool ist ein lokales System zur Extraktion und Visualisierung vo
 │  │  - Dashboard mit Filtern                                        │    │
 │  │  - Listenansicht & Kartenansicht                                │    │
 │  │  - Live-Updates via SSE                                         │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                         Adminer (Optional)                       │    │
-│  │  Port: 8080                                                      │    │
-│  │  Datenbank-Administration                                        │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -83,9 +77,10 @@ Das LSS Verband Tool ist ein lokales System zur Extraktion und Visualisierung vo
 
 **Technologie:** Node.js 20, Express, Drizzle ORM, PostgreSQL, Puppeteer
 
-**Authentifizierung:**
-- Alle `/ingest/*` Endpoints erfordern `X-API-Key` Header
-- Key wird gegen `API_KEY` Environment Variable geprüft
+**Architektur:**
+- Read-only API für das Web Frontend
+- Keine externen Schreibendpunkte (sicherheitsrelevant)
+- Der Scraper schreibt direkt in die Datenbank
 
 **Hauptfunktionen:**
 - Datenvalidierung mit Zod
@@ -159,9 +154,11 @@ Das LSS Verband Tool ist ein lokales System zur Extraktion und Visualisierung vo
 ## Sicherheit
 
 - LSS-Credentials werden nur im Server verwendet (nicht im Browser)
-- API-Key Authentifizierung für externe Schreiboperationen
+- **Keine externen Schreibendpunkte** - Die API ist read-only
+- Der Scraper schreibt direkt in die Datenbank ohne HTTP-Schnittstelle
 - CORS für lokale Entwicklung konfiguriert
 - Headless Browser läuft isoliert im Container
+- Datenbank ist nur intern erreichbar (kein Port-Mapping nach außen)
 
 ## Skalierung
 

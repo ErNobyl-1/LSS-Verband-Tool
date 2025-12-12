@@ -267,10 +267,30 @@ class LssScraper {
   private async extractMissions(): Promise<{ missions: MissionData[]; stats: ScraperStats }> {
     if (!this.page) return { missions: [], stats: this.emptyStats() };
 
-    // Extract data from page using evaluate
-    const result = await this.page.evaluate((missionLists) => {
-      const missions: MissionData[] = [];
-      const stats: ScraperStats = {
+    // Pass MISSION_LISTS as serializable data
+    const missionListsData = MISSION_LISTS.map(l => ({
+      containerId: l.containerId,
+      source: l.source,
+      category: l.category,
+      requiresShared: l.requiresShared,
+    }));
+
+    // Extract data from page using evaluate with a string function to avoid tsx transformation issues
+    const result = await this.page.evaluate((missionLists: Array<{containerId: string; source: string; category: string; requiresShared: boolean}>) => {
+      const missions: Array<{
+        ls_id: string;
+        title: string;
+        type: string | null;
+        status: string;
+        source: string;
+        category: string;
+        lat: number | null;
+        lon: number | null;
+        address: string | null;
+        raw_json: Record<string, unknown>;
+      }> = [];
+
+      const stats = {
         emergency: { own: 0, alliance: 0 },
         planned: { own: 0, alliance: 0 },
         event: { count: 0 },
@@ -278,27 +298,24 @@ class LssScraper {
         skipped: 0,
       };
 
-      function isSharedMission(missionId: string): boolean {
-        const panelEl = document.getElementById(`mission_panel_${missionId}`);
-        return panelEl?.classList.contains('panel-success') || false;
-      }
-
-      function extractFromList(listConfig: typeof missionLists[number]): void {
+      for (const listConfig of missionLists) {
         const container = document.getElementById(listConfig.containerId);
-        if (!container) return;
+        if (!container) continue;
 
         const missionElements = container.querySelectorAll('.missionSideBarEntry');
 
-        missionElements.forEach((el) => {
+        for (const el of missionElements) {
           const missionId = el.getAttribute('mission_id');
-          if (!missionId) return;
+          if (!missionId) continue;
 
-          const isShared = isSharedMission(missionId);
+          // Check if shared
+          const panelEl = document.getElementById('mission_panel_' + missionId);
+          const isShared = panelEl?.classList.contains('panel-success') || false;
 
           // Skip non-shared missions from own lists
           if (listConfig.requiresShared && !isShared) {
             stats.skipped++;
-            return;
+            continue;
           }
 
           // Get coordinates
@@ -307,18 +324,18 @@ class LssScraper {
           const missionTypeId = el.getAttribute('mission_type_id') || null;
 
           // Get title and address
-          const captionEl = document.getElementById(`mission_caption_${missionId}`);
+          const captionEl = document.getElementById('mission_caption_' + missionId);
           let title = 'Unbekannter Einsatz';
           let address: string | null = null;
 
           if (captionEl) {
             const clone = captionEl.cloneNode(true) as HTMLElement;
-            const addressEl = clone.querySelector(`#mission_address_${missionId}`);
+            const addressEl = clone.querySelector('#mission_address_' + missionId);
             if (addressEl) {
               address = addressEl.textContent?.trim() || null;
               addressEl.remove();
             }
-            const oldCaptionEl = clone.querySelector(`#mission_old_caption_${missionId}`);
+            const oldCaptionEl = clone.querySelector('#mission_old_caption_' + missionId);
             if (oldCaptionEl) {
               oldCaptionEl.remove();
             }
@@ -326,12 +343,11 @@ class LssScraper {
           }
 
           if (!address) {
-            const addrEl = document.getElementById(`mission_address_${missionId}`);
+            const addrEl = document.getElementById('mission_address_' + missionId);
             address = addrEl?.textContent?.trim() || null;
           }
 
           // Get status from panel color
-          const panelEl = document.getElementById(`mission_panel_${missionId}`);
           let status = 'active';
           let panelColor = 'unknown';
 
@@ -350,29 +366,28 @@ class LssScraper {
           }
 
           // Get additional info
-          const missingEl = document.getElementById(`mission_missing_${missionId}`);
+          const missingEl = document.getElementById('mission_missing_' + missionId);
           const missingText = missingEl?.textContent?.trim() || null;
 
-          const patientsEl = document.getElementById(`mission_patients_${missionId}`);
+          const patientsEl = document.getElementById('mission_patients_' + missionId);
           const patientCount = patientsEl ? patientsEl.querySelectorAll('[id^="patient_"]').length : 0;
 
-          const countdownEl = document.getElementById(`mission_overview_countdown_${missionId}`);
+          const countdownEl = document.getElementById('mission_overview_countdown_' + missionId);
           const timeleft = countdownEl?.getAttribute('timeleft') || null;
 
           // Determine effective source
-          let effectiveSource: 'own' | 'own_shared' | 'alliance' | 'alliance_event' | 'unknown' =
-            listConfig.source as 'own' | 'alliance' | 'alliance_event';
+          let effectiveSource = listConfig.source;
           if (listConfig.source === 'own' && isShared) {
             effectiveSource = 'own_shared';
           }
 
-          const mission: MissionData = {
+          missions.push({
             ls_id: missionId,
             title,
             type: missionTypeId,
             status,
             source: effectiveSource,
-            category: listConfig.category as 'emergency' | 'planned' | 'event',
+            category: listConfig.category,
             lat,
             lon,
             address,
@@ -388,9 +403,8 @@ class LssScraper {
               timeleft,
               extracted_at: new Date().toISOString(),
             },
-          };
+          });
 
-          missions.push(mission);
           stats.total++;
 
           // Update category stats
@@ -403,14 +417,11 @@ class LssScraper {
           } else if (listConfig.category === 'event') {
             stats.event.count++;
           }
-        });
+        }
       }
 
-      // Extract from all lists
-      missionLists.forEach(extractFromList);
-
       return { missions, stats };
-    }, MISSION_LISTS);
+    }, missionListsData);
 
     return result as { missions: MissionData[]; stats: ScraperStats };
   }
