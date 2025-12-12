@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Incident } from '../types';
 import { useMissionCredits } from '../hooks/useMissionCredits';
+import { usePlayerNames } from '../hooks/usePlayerNames';
 
 interface IncidentListProps {
   incidents: Incident[];
@@ -93,30 +94,27 @@ function getPlayerColor(name: string): { bg: string; text: string; border: strin
 }
 
 // Player badge component
-function PlayerBadge({ name, isDriving }: { name: string; isDriving?: boolean }) {
+function PlayerBadge({ name, displayName }: { name: string; displayName: string }) {
   const color = getPlayerColor(name);
 
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${color.bg} ${color.text} ${color.border}`}
     >
-      {isDriving && <span className="mr-1">🚗</span>}
-      {name}
+      {displayName}
     </span>
   );
 }
 
 // Player badges list component
-function PlayerBadges({ players, showDrivingIcon = true }: { players: { driving: string[]; atMission: string[] }; showDrivingIcon?: boolean }) {
+function PlayerBadges({ players, getDisplayName }: { players: { driving: string[]; atMission: string[] }; getDisplayName: (name: string) => string }) {
   const atMissionOnly = players.atMission.filter(p => !players.driving.includes(p));
+  const allPlayers = [...players.driving, ...atMissionOnly];
 
   return (
     <div className="flex flex-wrap gap-1 justify-end">
-      {players.driving.map(name => (
-        <PlayerBadge key={`driving-${name}`} name={name} isDriving={showDrivingIcon} />
-      ))}
-      {atMissionOnly.map(name => (
-        <PlayerBadge key={`at-${name}`} name={name} />
+      {allPlayers.map(name => (
+        <PlayerBadge key={name} name={name} displayName={getDisplayName(name)} />
       ))}
     </div>
   );
@@ -276,14 +274,11 @@ function PlannedMissionTimer({ incident }: { incident: Incident }) {
 }
 
 // Component for displaying participating players
-function MissionPlayers({ incident }: { incident: Incident }) {
+function MissionPlayers({ incident, getDisplayName }: { incident: Incident; getDisplayName: (name: string) => string }) {
   const players = getParticipatingPlayers(incident);
   if (!players) return null;
 
-  // Only show driving icon for planned missions, not for emergencies
-  const showDrivingIcon = incident.category === 'planned';
-
-  return <PlayerBadges players={players} showDrivingIcon={showDrivingIcon} />;
+  return <PlayerBadges players={players} getDisplayName={getDisplayName} />;
 }
 
 function getStatusColor(status: string | null) {
@@ -306,6 +301,7 @@ function cleanTitle(title: string) {
 
 export function IncidentList({ incidents, loading, error }: IncidentListProps) {
   const { getCredits } = useMissionCredits();
+  const { getDisplayName } = usePlayerNames();
 
   if (loading && incidents.length === 0) {
     return (
@@ -364,7 +360,7 @@ export function IncidentList({ incidents, loading, error }: IncidentListProps) {
                     </div>
                   )}
                   {(incident.category === 'planned' || incident.category === 'emergency') && (
-                    <MissionPlayers incident={incident} />
+                    <MissionPlayers incident={incident} getDisplayName={getDisplayName} />
                   )}
                 </div>
               </div>

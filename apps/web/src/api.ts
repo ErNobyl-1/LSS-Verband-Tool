@@ -157,3 +157,20 @@ export async function fetchMissionCredits(): Promise<MissionCreditsResponse> {
 
   return response.json();
 }
+
+export interface PlayerNamesResponse {
+  success: boolean;
+  data: Record<string, string>; // lssName -> displayName
+}
+
+export async function fetchPlayerNames(): Promise<PlayerNamesResponse> {
+  const response = await fetch(`${API_URL}/api/player-names`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
+
+  return response.json();
+}

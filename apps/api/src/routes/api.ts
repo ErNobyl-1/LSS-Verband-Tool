@@ -666,6 +666,32 @@ router.put('/admin/users/:id/activate', requireAdmin, async (req: Request, res: 
   }
 });
 
+// GET /api/player-names - Get mapping of lssName -> displayName for all active users
+router.get('/player-names', async (req: Request, res: Response) => {
+  try {
+    const users = await getAllUsers();
+
+    // Build mapping: lssName -> displayName (only for users with displayName)
+    const mapping: Record<string, string> = {};
+    for (const user of users) {
+      if (user.isActive && user.displayName) {
+        mapping[user.lssName] = user.displayName;
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: mapping,
+    });
+  } catch (error) {
+    console.error('Error fetching player names:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
 // DELETE /api/admin/users/:id - Delete a user
 router.delete('/admin/users/:id', requireAdmin, async (req: Request, res: Response) => {
   try {

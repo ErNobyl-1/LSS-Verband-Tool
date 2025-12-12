@@ -1,13 +1,5 @@
 import { useState } from 'react';
 import { useMembers } from '../hooks/useMembers';
-import { AllianceMember } from '../types';
-
-function getRoleBadge(member: AllianceMember) {
-  if (member.roleFlags.owner) return { label: 'Owner', color: 'bg-amber-500' };
-  if (member.roleFlags.admin) return { label: 'Admin', color: 'bg-red-500' };
-  if (member.roleFlags.coadmin) return { label: 'Co-Admin', color: 'bg-orange-500' };
-  return null;
-}
 
 function formatLastOnline(lastOnlineAt: string | null) {
   if (!lastOnlineAt) return 'Nie';
@@ -95,46 +87,30 @@ export function MemberList({ showOffline = true }: MemberListProps) {
           </div>
         ) : (
           <ul className="divide-y">
-            {displayMembers.map((member) => {
-              const roleBadge = getRoleBadge(member);
+            {displayMembers.map((member) => (
+              <li key={member.id} className="p-3 hover:bg-gray-50">
+                <div className="flex items-center gap-3">
+                  {/* Online indicator */}
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                      member.isOnline ? 'bg-green-500' : 'bg-gray-300'
+                    }`}
+                  />
 
-              return (
-                <li key={member.id} className="p-3 hover:bg-gray-50">
-                  <div className="flex items-center gap-3">
-                    {/* Online indicator */}
-                    <div
-                      className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                        member.isOnline ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                    />
-
-                    {/* Name and roles */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">{member.name}</span>
-                        {roleBadge && (
-                          <span className={`text-xs text-white px-1.5 py-0.5 rounded ${roleBadge.color}`}>
-                            {roleBadge.label}
-                          </span>
-                        )}
-                      </div>
-                      {member.roles.length > 0 && (
-                        <div className="text-xs text-gray-500 truncate">
-                          {member.roles.join(', ')}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Last online */}
-                    {!member.isOnline && (
-                      <div className="text-xs text-gray-400 flex-shrink-0">
-                        {formatLastOnline(member.lastOnlineAt)}
-                      </div>
-                    )}
+                  {/* Name */}
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium truncate">{member.name}</span>
                   </div>
-                </li>
-              );
-            })}
+
+                  {/* Last online */}
+                  {!member.isOnline && (
+                    <div className="text-xs text-gray-400 flex-shrink-0">
+                      {formatLastOnline(member.lastOnlineAt)}
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
           </ul>
         )}
       </div>
