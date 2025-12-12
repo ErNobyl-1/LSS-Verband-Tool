@@ -1,34 +1,28 @@
 import { useState, useMemo } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Header } from './components/Header';
-import { Filters } from './components/Filters';
 import { IncidentList } from './components/IncidentList';
-import { IncidentDetails } from './components/IncidentDetails';
 import { Map } from './components/Map';
 import { useIncidents } from './hooks/useIncidents';
-import { Incident, FilterState } from './types';
 
 function ListPage() {
-  const [filters, setFilters] = useState<FilterState>({
-    category: 'all',
-    status: 'all',
-    search: '',
-  });
-  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+  const [showEmergency, setShowEmergency] = useState(true);
+  const [showEvent, setShowEvent] = useState(true);
 
-  const { incidents, loading, error, connected } = useIncidents(filters);
+  const { incidents, loading, error, connected } = useIncidents();
 
-  const filteredIncidents = useMemo(() => {
-    if (!filters.search) return incidents;
+  // Separate incidents into two columns
+  const emergencyAndEvent = useMemo(() => {
+    return incidents.filter((i) => {
+      if (i.category === 'emergency' && showEmergency) return true;
+      if (i.category === 'event' && showEvent) return true;
+      return false;
+    });
+  }, [incidents, showEmergency, showEvent]);
 
-    const searchLower = filters.search.toLowerCase();
-    return incidents.filter(
-      (i) =>
-        i.title.toLowerCase().includes(searchLower) ||
-        i.lsId.toLowerCase().includes(searchLower) ||
-        (i.address && i.address.toLowerCase().includes(searchLower))
-    );
-  }, [incidents, filters.search]);
+  const planned = useMemo(() => {
+    return incidents.filter((i) => i.category === 'planned');
+  }, [incidents]);
 
   const stats = useMemo(() => {
     return {
@@ -38,30 +32,52 @@ function ListPage() {
     };
   }, [incidents]);
 
-  const handleSelectIncident = (incident: Incident) => {
-    setSelectedIncident(incident);
-  };
-
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       <Header connected={connected} stats={stats} />
-      <Filters filters={filters} onChange={setFilters} />
 
       <div className="flex-1 flex overflow-hidden">
+        {/* Left column: Notfälle & GSL-Einsätze */}
         <div className="w-1/2 bg-white border-r overflow-auto">
+          <div className="sticky top-0 bg-red-600 text-white px-4 py-2 font-medium flex items-center justify-between">
+            <span>Notfälle & GSL-Einsätze ({emergencyAndEvent.length})</span>
+            <div className="flex items-center gap-3 text-sm">
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showEmergency}
+                  onChange={(e) => setShowEmergency(e.target.checked)}
+                  className="w-4 h-4 rounded"
+                />
+                <span>Notfälle ({stats.emergency})</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showEvent}
+                  onChange={(e) => setShowEvent(e.target.checked)}
+                  className="w-4 h-4 rounded"
+                />
+                <span>GSL ({stats.event})</span>
+              </label>
+            </div>
+          </div>
           <IncidentList
-            incidents={filteredIncidents}
+            incidents={emergencyAndEvent}
             loading={loading}
             error={error}
-            selectedId={selectedIncident?.id ?? null}
-            onSelect={handleSelectIncident}
           />
         </div>
 
-        <div className="w-1/2 bg-gray-50">
-          <IncidentDetails
-            incident={selectedIncident}
-            onClose={() => setSelectedIncident(null)}
+        {/* Right column: Geplante Einsätze */}
+        <div className="w-1/2 bg-white overflow-auto">
+          <div className="sticky top-0 bg-blue-600 text-white px-4 py-2 font-medium">
+            Geplante Einsätze ({planned.length})
+          </div>
+          <IncidentList
+            incidents={planned}
+            loading={loading}
+            error={error}
           />
         </div>
       </div>
@@ -70,26 +86,7 @@ function ListPage() {
 }
 
 function MapPage() {
-  const [filters, setFilters] = useState<FilterState>({
-    category: 'all',
-    status: 'all',
-    search: '',
-  });
-  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
-
-  const { incidents, connected } = useIncidents(filters);
-
-  const filteredIncidents = useMemo(() => {
-    if (!filters.search) return incidents;
-
-    const searchLower = filters.search.toLowerCase();
-    return incidents.filter(
-      (i) =>
-        i.title.toLowerCase().includes(searchLower) ||
-        i.lsId.toLowerCase().includes(searchLower) ||
-        (i.address && i.address.toLowerCase().includes(searchLower))
-    );
-  }, [incidents, filters.search]);
+  const { incidents, connected } = useIncidents();
 
   const stats = useMemo(() => {
     return {
@@ -99,32 +96,12 @@ function MapPage() {
     };
   }, [incidents]);
 
-  const handleSelectIncident = (incident: Incident) => {
-    setSelectedIncident(incident);
-  };
-
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       <Header connected={connected} stats={stats} />
-      <Filters filters={filters} onChange={setFilters} />
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 relative">
-          <Map
-            incidents={filteredIncidents}
-            selectedId={selectedIncident?.id ?? null}
-            onSelect={handleSelectIncident}
-          />
-        </div>
-
-        {selectedIncident && (
-          <div className="w-96 bg-white border-l shadow-lg overflow-auto">
-            <IncidentDetails
-              incident={selectedIncident}
-              onClose={() => setSelectedIncident(null)}
-            />
-          </div>
-        )}
+      <div className="flex-1 overflow-hidden">
+        <Map incidents={incidents} />
       </div>
     </div>
   );

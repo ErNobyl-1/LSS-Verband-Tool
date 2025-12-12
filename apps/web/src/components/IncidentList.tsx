@@ -4,8 +4,6 @@ interface IncidentListProps {
   incidents: Incident[];
   loading: boolean;
   error: string | null;
-  selectedId: number | null;
-  onSelect: (incident: Incident) => void;
 }
 
 function getStatusColor(status: string | null) {
@@ -26,7 +24,7 @@ function cleanTitle(title: string) {
   return title.replace(/\s*\[Verband\]\s*/g, '').trim();
 }
 
-export function IncidentList({ incidents, loading, error, selectedId, onSelect }: IncidentListProps) {
+export function IncidentList({ incidents, loading, error }: IncidentListProps) {
   if (loading && incidents.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -55,15 +53,11 @@ export function IncidentList({ incidents, loading, error, selectedId, onSelect }
     <div className="divide-y">
       {incidents.map((incident) => {
         const statusColor = getStatusColor(incident.status);
-        const isSelected = selectedId === incident.id;
 
         return (
           <div
             key={incident.id}
-            onClick={() => onSelect(incident)}
-            className={`flex cursor-pointer transition-colors ${
-              isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
-            }`}
+            className="flex hover:bg-gray-50 transition-colors"
           >
             {/* Status indicator stripe */}
             <div className={`w-2 flex-shrink-0 ${statusColor}`} />

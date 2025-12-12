@@ -5,8 +5,6 @@ import { Incident } from '../types';
 
 interface MapProps {
   incidents: Incident[];
-  selectedId: number | null;
-  onSelect: (incident: Incident) => void;
 }
 
 function getMarkerColor(source: string): string {
@@ -24,7 +22,7 @@ function cleanTitle(title: string) {
   return title.replace(/\s*\[Verband\]\s*/g, '').trim();
 }
 
-export function Map({ incidents, selectedId, onSelect }: MapProps) {
+export function Map({ incidents }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<globalThis.Map<number, maplibregl.Marker>>(new globalThis.Map());
@@ -116,46 +114,13 @@ export function Map({ incidents, selectedId, onSelect }: MapProps) {
 
         marker.setPopup(popup);
 
-        // Click handler
-        el.addEventListener('click', () => {
-          onSelect(incident);
-        });
-
         currentMarkers.set(incident.id, marker);
       } else {
         // Update existing marker position
         marker.setLngLat([incident.lon, incident.lat]);
       }
-
-      // Update marker appearance based on selection
-      const el = marker.getElement();
-      if (incident.id === selectedId) {
-        el.style.width = '32px';
-        el.style.height = '32px';
-        el.style.border = '4px solid #facc15';
-        el.style.zIndex = '100';
-      } else {
-        el.style.width = '24px';
-        el.style.height = '24px';
-        el.style.border = '3px solid white';
-        el.style.zIndex = '1';
-      }
     });
-  }, [incidents, selectedId, onSelect]);
-
-  // Fly to selected incident
-  useEffect(() => {
-    if (!map.current || !selectedId) return;
-
-    const incident = incidents.find((i) => i.id === selectedId);
-    if (incident?.lat && incident?.lon) {
-      map.current.flyTo({
-        center: [incident.lon, incident.lat],
-        zoom: 14,
-        duration: 1000,
-      });
-    }
-  }, [selectedId, incidents]);
+  }, [incidents]);
 
   return (
     <div ref={mapContainer} className="w-full h-full" />

@@ -1,22 +1,9 @@
-import { IncidentsResponse, FilterState, SSEMessage, AllianceStatsResponse, AllianceStatsHistoryResponse, MembersResponse } from './types';
+import { IncidentsResponse, SSEMessage, AllianceStatsResponse, AllianceStatsHistoryResponse, MembersResponse } from './types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-export async function fetchIncidents(filters: FilterState): Promise<IncidentsResponse> {
+export async function fetchIncidents(): Promise<IncidentsResponse> {
   const params = new URLSearchParams();
-
-  if (filters.category !== 'all') {
-    params.set('category', filters.category);
-  }
-
-  if (filters.status !== 'all') {
-    params.set('status', filters.status);
-  }
-
-  if (filters.search) {
-    params.set('q', filters.search);
-  }
-
   params.set('limit', '500');
 
   const response = await fetch(`${API_URL}/api/incidents?${params.toString()}`);

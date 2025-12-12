@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Incident, FilterState, SSEMessage } from '../types';
+import { Incident, SSEMessage } from '../types';
 import { fetchIncidents, createSSEConnection } from '../api';
 
 const RETRY_INTERVAL = 5000; // 5 seconds
 
-export function useIncidents(filters: FilterState) {
+export function useIncidents() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -12,12 +12,6 @@ export function useIncidents(filters: FilterState) {
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const filtersRef = useRef(filters);
-
-  // Keep filters ref up to date
-  useEffect(() => {
-    filtersRef.current = filters;
-  }, [filters]);
 
   // Fetch incidents from API
   const loadIncidents = useCallback(async () => {
@@ -30,7 +24,7 @@ export function useIncidents(filters: FilterState) {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetchIncidents(filtersRef.current);
+      const response = await fetchIncidents();
       setIncidents(response.data);
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'Unknown error';
@@ -101,11 +95,6 @@ export function useIncidents(filters: FilterState) {
       eventSourceRef.current = null;
     };
   }, [handleSSEMessage, loadIncidents]);
-
-  // Load incidents on mount and filter change
-  useEffect(() => {
-    loadIncidents();
-  }, [filters, loadIncidents]);
 
   // Cleanup retry timeout on unmount
   useEffect(() => {
