@@ -319,9 +319,9 @@ class LssScraper {
     if (!this.browser) return;
 
     try {
-      // Get cookies from browser context - works independently of page navigation
-      const context = this.browser.defaultBrowserContext();
-      const cookies = await context.cookies(this.config.baseUrl);
+      // Get cookies from page - filtered by LSS domain
+      if (!this.page) return;
+      const cookies = await this.page.cookies(this.config.baseUrl);
       const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
 
       // Make direct HTTP request with session cookies
