@@ -1,6 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { missionTypes, MissionType } from '../db/schema.js';
+import { createLogger } from '../lib/logger.js';
+
+const logger = createLogger('mission-types');
 
 interface LSSMissionType {
   id: string;
@@ -16,7 +19,7 @@ let lastCacheUpdate: Date | null = null;
  * Fetch mission types from LSS API and update database cache
  */
 export async function refreshMissionTypes(): Promise<number> {
-  console.log('Fetching mission types from LSS API...');
+  logger.info('Fetching mission types from LSS API...');
 
   try {
     const response = await fetch('https://www.leitstellenspiel.de/einsaetze.json');
@@ -26,7 +29,7 @@ export async function refreshMissionTypes(): Promise<number> {
     }
 
     const missions: LSSMissionType[] = await response.json();
-    console.log(`Received ${missions.length} mission types from LSS API`);
+    logger.info({ count: missions.length }, 'Received mission types from LSS API');
 
     let upsertCount = 0;
 
@@ -59,11 +62,11 @@ export async function refreshMissionTypes(): Promise<number> {
     }
 
     lastCacheUpdate = new Date();
-    console.log(`Updated ${upsertCount} mission types in database`);
+    logger.info({ count: upsertCount }, 'Updated mission types in database');
 
     return upsertCount;
   } catch (error) {
-    console.error('Failed to refresh mission types:', error);
+    logger.error({ err: error }, 'Failed to refresh mission types');
     throw error;
   }
 }
@@ -72,7 +75,7 @@ export async function refreshMissionTypes(): Promise<number> {
  * Load mission types from database into memory cache
  */
 export async function loadMissionTypesCache(): Promise<void> {
-  console.log('Loading mission types cache from database...');
+  logger.info('Loading mission types cache from database...');
 
   const allTypes = await db.select().from(missionTypes);
 
@@ -82,7 +85,7 @@ export async function loadMissionTypesCache(): Promise<void> {
   }
 
   lastCacheUpdate = new Date();
-  console.log(`Loaded ${allTypes.length} mission types into cache`);
+  logger.info({ count: allTypes.length }, 'Loaded mission types into cache');
 }
 
 /**
@@ -118,7 +121,7 @@ export async function initializeMissionTypes(): Promise<void> {
 
   // If cache is empty, fetch from LSS API
   if (missionTypeCache.size === 0) {
-    console.log('Mission types cache empty, fetching from LSS API...');
+    logger.info('Mission types cache empty, fetching from LSS API...');
     await refreshMissionTypes();
   } else {
     // Check if data is older than 1 week
@@ -128,9 +131,9 @@ export async function initializeMissionTypes(): Promise<void> {
       const oneWeek = 7 * 24 * 60 * 60 * 1000;
 
       if (age > oneWeek) {
-        console.log('Mission types cache is stale (>1 week), refreshing...');
+        logger.info('Mission types cache is stale (>1 week), refreshing...');
         refreshMissionTypes().catch(err => {
-          console.error('Background refresh of mission types failed:', err);
+          logger.error({ err }, 'Background refresh of mission types failed');
         });
       }
     }

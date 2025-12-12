@@ -1,5 +1,8 @@
 import { Response } from 'express';
 import { Incident, AllianceStat, AllianceMember } from '../db/schema.js';
+import { createLogger } from '../lib/logger.js';
+
+const logger = createLogger('sse');
 
 // Store active SSE connections
 const clients: Set<Response> = new Set();
@@ -19,12 +22,12 @@ interface MembersData {
 
 export function addClient(res: Response): void {
   clients.add(res);
-  console.log(`SSE client connected. Total clients: ${clients.size}`);
+  logger.debug({ totalClients: clients.size }, 'SSE client connected');
 }
 
 export function removeClient(res: Response): void {
   clients.delete(res);
-  console.log(`SSE client disconnected. Total clients: ${clients.size}`);
+  logger.debug({ totalClients: clients.size }, 'SSE client disconnected');
 }
 
 export function broadcastIncident(incident: Incident, eventType: 'created' | 'updated'): void {
@@ -39,7 +42,7 @@ export function broadcastIncident(incident: Incident, eventType: 'created' | 'up
       client.write(`event: incident\n`);
       client.write(`data: ${data}\n\n`);
     } catch (error) {
-      console.error('Error sending SSE to client:', error);
+      logger.error({ err: error }, 'Error sending SSE to client');
       removeClient(client);
     }
   });
@@ -58,7 +61,7 @@ export function broadcastBatch(incidents: Incident[], eventType: 'batch_upsert')
       client.write(`event: batch\n`);
       client.write(`data: ${data}\n\n`);
     } catch (error) {
-      console.error('Error sending SSE to client:', error);
+      logger.error({ err: error }, 'Error sending SSE to client');
       removeClient(client);
     }
   });
@@ -80,7 +83,7 @@ export function broadcastDeleted(deletedIncidents: Incident[]): void {
       client.write(`event: deleted\n`);
       client.write(`data: ${data}\n\n`);
     } catch (error) {
-      console.error('Error sending SSE to client:', error);
+      logger.error({ err: error }, 'Error sending SSE to client');
       removeClient(client);
     }
   });
@@ -102,7 +105,7 @@ export function broadcastAllianceStats(stats: AllianceStatsWithChanges): void {
       client.write(`event: alliance_stats\n`);
       client.write(`data: ${data}\n\n`);
     } catch (error) {
-      console.error('Error sending SSE alliance stats to client:', error);
+      logger.error({ err: error }, 'Error sending SSE alliance stats to client');
       removeClient(client);
     }
   });
@@ -121,7 +124,7 @@ export function broadcastMembers(data: MembersData): void {
       client.write(`event: members\n`);
       client.write(`data: ${payload}\n\n`);
     } catch (error) {
-      console.error('Error sending SSE members to client:', error);
+      logger.error({ err: error }, 'Error sending SSE members to client');
       removeClient(client);
     }
   });

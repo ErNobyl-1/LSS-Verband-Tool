@@ -3,6 +3,7 @@ import { upsertIncidents, deleteStaleIncidents } from './incidents.js';
 import { saveAllianceStats, getLatestAllianceStatsWithChanges } from './alliance-stats.js';
 import { upsertMembers, filterExcludedMembers, getAllMembers, getMemberCounts } from './alliance-members.js';
 import { broadcastDeleted, broadcastAllianceStats, broadcastMembers } from './sse.js';
+import { scraperLogger as logger } from '../lib/logger.js';
 
 // Mission list configuration - same as Tampermonkey script
 const MISSION_LISTS = [
@@ -48,6 +49,9 @@ class LssScraper {
   private memberTrackingIntervalId: NodeJS.Timeout | null = null;
   private loginAttempts = 0;
   private maxLoginAttempts = 3;
+  private startedAt: Date | null = null;
+  private lastScrapeAt: Date | null = null;
+  private scrapeCount = 0;
 
   private config = {
     email: process.env.LSS_EMAIL || '',
@@ -61,39 +65,42 @@ class LssScraper {
 
   async start(): Promise<void> {
     if (!this.config.email || !this.config.password) {
-      console.error('[LSS-Scraper] Missing LSS_EMAIL or LSS_PASSWORD in environment');
+      logger.error('Missing LSS_EMAIL or LSS_PASSWORD in environment');
       return;
     }
 
-    console.log('[LSS-Scraper] Starting...');
-    console.log(`[LSS-Scraper] Scrape interval: ${this.config.scrapeInterval}ms`);
-    console.log(`[LSS-Scraper] Alliance stats interval: ${this.config.allianceStatsInterval}ms`);
-    console.log(`[LSS-Scraper] Member tracking interval: ${this.config.memberTrackingInterval}ms`);
-    console.log(`[LSS-Scraper] Headless mode: ${this.config.headless}`);
+    logger.info('Starting scraper...');
+    logger.info({
+      scrapeInterval: this.config.scrapeInterval,
+      allianceStatsInterval: this.config.allianceStatsInterval,
+      memberTrackingInterval: this.config.memberTrackingInterval,
+      headless: this.config.headless,
+    }, 'Scraper configuration');
 
     try {
       await this.initBrowser();
       await this.ensureLoggedIn();
 
       // Fetch alliance stats and members immediately after login (before starting loops)
-      console.log('[LSS-Scraper] Fetching initial data after login...');
+      logger.info('Fetching initial data after login...');
       await Promise.all([
         this.fetchAllianceStats(),
         this.fetchAndTrackMembers(),
       ]);
-      console.log('[LSS-Scraper] Initial data fetched successfully');
+      logger.info('Initial data fetched successfully');
 
       this.startScrapeLoop();
       this.startAllianceStatsLoop();
       this.startMemberTrackingLoop();
+      this.startedAt = new Date();
     } catch (error) {
-      console.error('[LSS-Scraper] Failed to start:', error);
+      logger.error({ err: error }, 'Failed to start');
       await this.cleanup();
     }
   }
 
   async stop(): Promise<void> {
-    console.log('[LSS-Scraper] Stopping...');
+    logger.info('Stopping scraper...');
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
@@ -109,12 +116,28 @@ class LssScraper {
     await this.cleanup();
   }
 
+  getStatus(): {
+    running: boolean;
+    startedAt: Date | null;
+    lastScrapeAt: Date | null;
+    scrapeCount: number;
+    browserConnected: boolean;
+  } {
+    return {
+      running: this.intervalId !== null,
+      startedAt: this.startedAt,
+      lastScrapeAt: this.lastScrapeAt,
+      scrapeCount: this.scrapeCount,
+      browserConnected: this.browser !== null && this.browser.connected,
+    };
+  }
+
   private async initBrowser(): Promise<void> {
-    console.log('[LSS-Scraper] Launching browser...');
+    logger.info('Launching browser...');
 
     const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
     if (executablePath) {
-      console.log(`[LSS-Scraper] Using Chromium at: ${executablePath}`);
+      logger.info({ executablePath }, 'Using custom Chromium path');
     }
 
     this.browser = await puppeteer.launch({
@@ -148,20 +171,20 @@ class LssScraper {
       }
     });
 
-    console.log('[LSS-Scraper] Browser launched');
+    logger.info('Browser launched');
   }
 
   private async ensureLoggedIn(): Promise<boolean> {
     if (!this.page) return false;
 
     // Navigate to main page
-    console.log('[LSS-Scraper] Navigating to LSS...');
+    logger.info('Navigating to LSS...');
     await this.page.goto(this.config.baseUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
     // Check if we're already logged in by looking for mission_list
     const missionList = await this.page.$('#mission_list');
     if (missionList) {
-      console.log('[LSS-Scraper] Already logged in');
+      logger.info('Already logged in');
       this.loginAttempts = 0;
       return true;
     }
@@ -174,12 +197,12 @@ class LssScraper {
     if (!this.page) return false;
 
     if (this.loginAttempts >= this.maxLoginAttempts) {
-      console.error('[LSS-Scraper] Max login attempts reached');
+      logger.error('Max login attempts reached');
       return false;
     }
 
     this.loginAttempts++;
-    console.log(`[LSS-Scraper] Login attempt ${this.loginAttempts}/${this.maxLoginAttempts}`);
+    logger.info({ attempt: this.loginAttempts, maxAttempts: this.maxLoginAttempts }, 'Login attempt');
 
     try {
       // Navigate to login page
@@ -210,7 +233,7 @@ class LssScraper {
       // Check if login was successful
       const missionList = await this.page.$('#mission_list');
       if (missionList) {
-        console.log('[LSS-Scraper] Login successful');
+        logger.info('Login successful');
         this.loginAttempts = 0;
         return true;
       }
@@ -219,20 +242,20 @@ class LssScraper {
       const errorMessage = await this.page.$('.alert-danger');
       if (errorMessage) {
         const text = await this.page.evaluate(el => el?.textContent || '', errorMessage);
-        console.error('[LSS-Scraper] Login failed:', text.trim());
+        logger.error({ reason: text.trim() }, 'Login failed');
       } else {
-        console.error('[LSS-Scraper] Login failed - unknown reason');
+        logger.error('Login failed - unknown reason');
       }
 
       return false;
     } catch (error) {
-      console.error('[LSS-Scraper] Login error:', error);
+      logger.error({ err: error }, 'Login error');
       return false;
     }
   }
 
   private startScrapeLoop(): void {
-    console.log('[LSS-Scraper] Starting scrape loop');
+    logger.info('Starting scrape loop');
 
     // Initial scrape
     this.scrape();
@@ -244,7 +267,7 @@ class LssScraper {
   }
 
   private startAllianceStatsLoop(): void {
-    console.log('[LSS-Scraper] Starting alliance stats loop');
+    logger.info('Starting alliance stats loop');
 
     // Set up interval (default: every 5 minutes)
     // Initial fetch already done in start()
@@ -275,15 +298,15 @@ class LssScraper {
           broadcastAllianceStats(statsWithChanges);
         }
       } else {
-        console.error('[LSS-Scraper] Invalid alliance info response:', response);
+        logger.error({ response }, 'Invalid alliance info response');
       }
     } catch (error) {
-      console.error('[LSS-Scraper] Failed to fetch alliance stats:', error);
+      logger.error({ err: error }, 'Failed to fetch alliance stats');
     }
   }
 
   private startMemberTrackingLoop(): void {
-    console.log('[LSS-Scraper] Starting member tracking loop');
+    logger.info('Starting member tracking loop');
 
     // Set up interval (default: every 1 minute)
     // Initial fetch already done in start()
@@ -312,10 +335,13 @@ class LssScraper {
         const filteredMembers = filterExcludedMembers(response.users as Array<{ id: number; name: string; online: boolean }>);
         const onlineCount = filteredMembers.filter((m) => m.online).length;
 
-        console.log(
-          `[LSS-Scraper] Members: ${filteredMembers.length} total, ${onlineCount} online ` +
-          `(${result.created} new, ${result.updated} updated, ${result.activityChanges} status changes)`
-        );
+        logger.info({
+          total: filteredMembers.length,
+          online: onlineCount,
+          created: result.created,
+          updated: result.updated,
+          statusChanges: result.activityChanges,
+        }, 'Members synced');
 
         // Broadcast updated members via SSE
         const allMembers = await getAllMembers(response.id);
@@ -323,7 +349,7 @@ class LssScraper {
         broadcastMembers({ members: allMembers, counts });
       }
     } catch (error) {
-      console.error('[LSS-Scraper] Failed to track members:', error);
+      logger.error({ err: error }, 'Failed to track members');
     }
   }
 
@@ -336,10 +362,10 @@ class LssScraper {
       // Check if still logged in
       const missionList = await this.page.$('#mission_list');
       if (!missionList) {
-        console.log('[LSS-Scraper] Session expired, re-logging in...');
+        logger.warn('Session expired, re-logging in...');
         const loggedIn = await this.ensureLoggedIn();
         if (!loggedIn) {
-          console.error('[LSS-Scraper] Could not re-login, stopping scraper');
+          logger.error('Could not re-login, stopping scraper');
           await this.stop();
           return;
         }
@@ -362,25 +388,33 @@ class LssScraper {
       const deletedIncidents = await deleteStaleIncidents(activeLsIds);
       if (deletedIncidents.length > 0) {
         broadcastDeleted(deletedIncidents);
-        console.log(`[LSS-Scraper] Deleted ${deletedIncidents.length} completed missions`);
+        logger.info({ count: deletedIncidents.length }, 'Deleted completed missions');
       }
 
       if (missions.length > 0) {
         // Save to database (SSE broadcast happens inside upsertIncidents)
         const result = await upsertIncidents(missions);
-        console.log(
-          `[LSS-Scraper] Synced ${missions.length} missions (${result.created} new, ${result.updated} updated)`
-        );
+        logger.info({
+          total: missions.length,
+          created: result.created,
+          updated: result.updated,
+        }, 'Missions synced');
       }
 
       // Log stats
-      console.log(
-        `[LSS-Scraper] Stats: Notfälle(E:${stats.emergency.own}/V:${stats.emergency.alliance}) ` +
-        `Geplant(E:${stats.planned.own}/V:${stats.planned.alliance}) GSL:${stats.event.count} | ` +
-        `Total:${stats.total} Skipped:${stats.skipped}`
-      );
+      logger.debug({
+        emergency: stats.emergency,
+        planned: stats.planned,
+        event: stats.event.count,
+        total: stats.total,
+        skipped: stats.skipped,
+      }, 'Scrape stats');
+
+      // Update scrape stats
+      this.lastScrapeAt = new Date();
+      this.scrapeCount++;
     } catch (error) {
-      console.error('[LSS-Scraper] Scrape error:', error);
+      logger.error({ err: error }, 'Scrape error');
 
       // Try to recover by reloading page
       try {
@@ -398,7 +432,7 @@ class LssScraper {
   private async fetchMissionDetails(missions: MissionData[]): Promise<void> {
     if (!this.page || missions.length === 0) return;
 
-    console.log(`[LSS-Scraper] Fetching details for ${missions.length} missions...`);
+    logger.debug({ count: missions.length }, 'Fetching mission details...');
 
     // Process missions sequentially to avoid issues with page navigation
     let detailsCount = 0;
@@ -413,7 +447,7 @@ class LssScraper {
         // 304 is fine (not modified), any 2xx or 304 is OK
         const status = response?.status();
         if (!response || (status !== 304 && (status === undefined || status < 200 || status >= 400))) {
-          console.log(`[LSS-Scraper] Failed to load mission ${mission.ls_id}: ${status}`);
+          logger.warn({ missionId: mission.ls_id, status }, 'Failed to load mission details');
           continue;
         }
 
@@ -487,7 +521,7 @@ class LssScraper {
         if (details.remaining_seconds !== null) withTimeCount++;
 
       } catch (error) {
-        console.error(`[LSS-Scraper] Error fetching details for mission ${mission.ls_id}:`, error);
+        logger.error({ err: error, missionId: mission.ls_id }, 'Error fetching mission details');
       }
     }
 
@@ -499,7 +533,7 @@ class LssScraper {
     }
 
     if (detailsCount > 0) {
-      console.log(`[LSS-Scraper] Fetched details for ${detailsCount}/${missions.length} missions (${withTimeCount} with countdown)`);
+      logger.debug({ fetched: detailsCount, total: missions.length, withCountdown: withTimeCount }, 'Mission details fetched');
     }
   }
 
@@ -698,7 +732,7 @@ class LssScraper {
       await this.browser.close().catch(() => {});
       this.browser = null;
     }
-    console.log('[LSS-Scraper] Cleaned up');
+    logger.info('Browser cleaned up');
   }
 }
 

@@ -1,6 +1,7 @@
 import { db, pool } from '../db/index.js';
 import { allianceStats, type NewAllianceStat } from '../db/schema.js';
 import { desc, eq, and, gte, lte } from 'drizzle-orm';
+import { statsLogger as logger } from '../lib/logger.js';
 
 interface AllianceInfoResponse {
   id: number;
@@ -33,10 +34,12 @@ export async function saveAllianceStats(data: AllianceInfoResponse): Promise<voi
 
   await db.insert(allianceStats).values(stat);
 
-  console.log(
-    `[Alliance-Stats] Saved: Rank #${data.rank}, Credits: ${data.credits_total.toLocaleString('de-DE')}, ` +
-    `Users: ${data.user_online_count}/${data.user_count} online`
-  );
+  logger.info({
+    rank: data.rank,
+    credits: data.credits_total,
+    usersOnline: data.user_online_count,
+    usersTotal: data.user_count,
+  }, 'Alliance stats saved');
 }
 
 export async function getLatestAllianceStats() {

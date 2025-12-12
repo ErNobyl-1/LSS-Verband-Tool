@@ -2,6 +2,11 @@ import { Router, Request, Response } from 'express';
 import { incidentQuerySchema } from '../validation/schemas.js';
 import { queryIncidents, getIncidentById } from '../services/incidents.js';
 import { addClient, removeClient, getClientCount } from '../services/sse.js';
+import { lssScraper } from '../services/lss-scraper.js';
+import { db } from '../db/index.js';
+import { sql } from 'drizzle-orm';
+import os from 'os';
+import { apiLogger as logger } from '../lib/logger.js';
 import { getLatestAllianceStats, getLatestAllianceStatsWithChanges, getLatestAllianceStatsWithAllChanges, getAllianceStatsHistory, getAggregatedStats } from '../services/alliance-stats.js';
 import { getAllMembers, getOnlineMembers, getMemberById, getMemberActivityHistory, getMemberCounts } from '../services/alliance-members.js';
 import { getAllMissionCredits, getMissionTypeCacheStats, refreshMissionTypes } from '../services/mission-types.js';
@@ -23,6 +28,26 @@ import {
   updateOwnPassword,
 } from '../services/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
+
+// Password validation helper
+function validatePassword(password: string): { valid: boolean; message?: string } {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, message: 'Passwort ist erforderlich' };
+  }
+  if (password.length < 8) {
+    return { valid: false, message: 'Passwort muss mindestens 8 Zeichen lang sein' };
+  }
+  if (!/[a-zA-Z]/.test(password)) {
+    return { valid: false, message: 'Passwort muss mindestens einen Buchstaben enthalten' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, message: 'Passwort muss mindestens eine Zahl enthalten' };
+  }
+  if (!/[^a-zA-Z0-9]/.test(password)) {
+    return { valid: false, message: 'Passwort muss mindestens ein Sonderzeichen enthalten' };
+  }
+  return { valid: true };
+}
 
 const router = Router();
 
@@ -50,7 +75,7 @@ router.get('/incidents', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Error querying incidents:', error);
+    logger.error({ err: error }, 'Error querying incidents');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -84,7 +109,7 @@ router.get('/incidents/:id', async (req: Request, res: Response) => {
       data: incident,
     });
   } catch (error) {
-    console.error('Error fetching incident:', error);
+    logger.error({ err: error }, 'Error fetching incident');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -125,12 +150,77 @@ router.get('/stream', (req: Request, res: Response) => {
   });
 });
 
-// GET /api/health - Health check endpoint
-router.get('/health', (req: Request, res: Response) => {
+// GET /api/health - Enhanced health check endpoint
+router.get('/health', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  const checks: Record<string, { status: string; latency?: string; error?: string; details?: any }> = {};
+
+  // Database check
+  try {
+    const dbStart = Date.now();
+    await db.execute(sql`SELECT 1`);
+    checks.database = { status: 'up', latency: `${Date.now() - dbStart}ms` };
+  } catch (err) {
+    checks.database = { status: 'down', error: err instanceof Error ? err.message : 'Unknown error' };
+  }
+
+  // Scraper check
+  const scraperStatus = lssScraper.getStatus();
+  checks.scraper = {
+    status: scraperStatus.running ? 'running' : 'stopped',
+    details: {
+      browserConnected: scraperStatus.browserConnected,
+      scrapeCount: scraperStatus.scrapeCount,
+      lastScrapeAt: scraperStatus.lastScrapeAt?.toISOString() || null,
+      startedAt: scraperStatus.startedAt?.toISOString() || null,
+    },
+  };
+
+  // Memory check
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMemPercent = Math.round(((totalMem - freeMem) / totalMem) * 100);
+  checks.memory = {
+    status: usedMemPercent > 90 ? 'warning' : 'ok',
+    details: {
+      usedPercent: usedMemPercent,
+      totalMB: Math.round(totalMem / 1024 / 1024),
+      freeMB: Math.round(freeMem / 1024 / 1024),
+    },
+  };
+
+  // CPU load (1 min average)
+  const loadAvg = os.loadavg()[0];
+  const cpuCount = os.cpus().length;
+  const loadPercent = Math.round((loadAvg / cpuCount) * 100);
+  checks.cpu = {
+    status: loadPercent > 80 ? 'warning' : 'ok',
+    details: {
+      loadAvg1m: loadAvg.toFixed(2),
+      cores: cpuCount,
+      loadPercent,
+    },
+  };
+
+  // Process uptime
+  const uptimeSeconds = process.uptime();
+  const uptimeDays = Math.floor(uptimeSeconds / 86400);
+  const uptimeHours = Math.floor((uptimeSeconds % 86400) / 3600);
+  const uptimeMinutes = Math.floor((uptimeSeconds % 3600) / 60);
+
+  // Overall status
+  const isHealthy = checks.database.status === 'up';
+  const hasWarnings = Object.values(checks).some(c => c.status === 'warning');
+
   res.json({
-    status: 'ok',
+    status: isHealthy ? (hasWarnings ? 'degraded' : 'healthy') : 'unhealthy',
     timestamp: new Date().toISOString(),
-    sseClients: getClientCount(),
+    responseTime: `${Date.now() - startTime}ms`,
+    uptime: `${uptimeDays}d ${uptimeHours}h ${uptimeMinutes}m`,
+    checks,
+    stats: {
+      sseClients: getClientCount(),
+    },
   });
 });
 
@@ -152,7 +242,7 @@ router.get('/alliance/stats', async (req: Request, res: Response) => {
       data: latest,
     });
   } catch (error) {
-    console.error('Error fetching alliance stats:', error);
+    logger.error({ err: error }, 'Error fetching alliance stats');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -178,7 +268,7 @@ router.get('/alliance/stats/full', async (req: Request, res: Response) => {
       data: latest,
     });
   } catch (error) {
-    console.error('Error fetching full alliance stats:', error);
+    logger.error({ err: error }, 'Error fetching full alliance stats');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -258,7 +348,7 @@ router.get('/alliance/stats/history', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching alliance stats history:', error);
+    logger.error({ err: error }, 'Error fetching alliance stats history');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -290,7 +380,7 @@ router.get('/members', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching members:', error);
+    logger.error({ err: error }, 'Error fetching members');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -313,7 +403,7 @@ router.get('/members/online', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching online members:', error);
+    logger.error({ err: error }, 'Error fetching online members');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -347,7 +437,7 @@ router.get('/members/:id', async (req: Request, res: Response) => {
       data: member,
     });
   } catch (error) {
-    console.error('Error fetching member:', error);
+    logger.error({ err: error }, 'Error fetching member');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -383,7 +473,7 @@ router.get('/members/:id/activity', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching member activity:', error);
+    logger.error({ err: error }, 'Error fetching member activity');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -410,7 +500,7 @@ router.get('/mission-credits', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching mission credits:', error);
+    logger.error({ err: error }, 'Error fetching mission credits');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -428,7 +518,7 @@ router.post('/mission-credits/refresh', async (req: Request, res: Response) => {
       message: `Refreshed ${count} mission types from LSS API`,
     });
   } catch (error) {
-    console.error('Error refreshing mission credits:', error);
+    logger.error({ err: error }, 'Error refreshing mission credits');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -494,7 +584,7 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Error logging in:', error);
+    logger.error({ err: error }, 'Error logging in');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -517,7 +607,7 @@ router.post('/auth/logout', async (req: Request, res: Response) => {
       message: 'Erfolgreich abgemeldet',
     });
   } catch (error) {
-    console.error('Error logging out:', error);
+    logger.error({ err: error }, 'Error logging out');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -579,7 +669,7 @@ router.put('/auth/settings', authMiddleware, async (req: Request, res: Response)
       message: 'Einstellungen gespeichert',
     });
   } catch (error) {
-    console.error('Error updating settings:', error);
+    logger.error({ err: error }, 'Error updating settings');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -602,11 +692,12 @@ router.put('/auth/password', authMiddleware, async (req: Request, res: Response)
       });
     }
 
-    if (newPassword.length < 6) {
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
       return res.status(400).json({
         success: false,
         error: 'Validation Error',
-        message: 'Neues Passwort muss mindestens 6 Zeichen lang sein',
+        message: passwordValidation.message,
       });
     }
 
@@ -627,7 +718,7 @@ router.put('/auth/password', authMiddleware, async (req: Request, res: Response)
       message: 'Passwort geändert',
     });
   } catch (error) {
-    console.error('Error changing password:', error);
+    logger.error({ err: error }, 'Error changing password');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -650,7 +741,7 @@ router.get('/admin/users', requireAdmin, async (req: Request, res: Response) => 
       data: users,
     });
   } catch (error) {
-    console.error('Error fetching users:', error);
+    logger.error({ err: error }, 'Error fetching users');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -669,7 +760,7 @@ router.get('/admin/users/pending', requireAdmin, async (req: Request, res: Respo
       data: users,
     });
   } catch (error) {
-    console.error('Error fetching pending users:', error);
+    logger.error({ err: error }, 'Error fetching pending users');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -719,7 +810,7 @@ router.put('/admin/users/:id/activate', requireAdmin, async (req: Request, res: 
       message: 'Benutzer freigeschaltet',
     });
   } catch (error) {
-    console.error('Error activating user:', error);
+    logger.error({ err: error }, 'Error activating user');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -741,11 +832,12 @@ router.post('/admin/users', requireAdmin, async (req: Request, res: Response) =>
       });
     }
 
-    if (!password || typeof password !== 'string' || password.length < 6) {
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
       return res.status(400).json({
         success: false,
         error: 'Validation Error',
-        message: 'Passwort muss mindestens 6 Zeichen lang sein',
+        message: passwordValidation.message,
       });
     }
 
@@ -781,7 +873,7 @@ router.post('/admin/users', requireAdmin, async (req: Request, res: Response) =>
       message: 'Benutzer erstellt',
     });
   } catch (error) {
-    console.error('Error creating user:', error);
+    logger.error({ err: error }, 'Error creating user');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -834,7 +926,7 @@ router.put('/admin/users/:id', requireAdmin, async (req: Request, res: Response)
       message: 'Benutzer aktualisiert',
     });
   } catch (error) {
-    console.error('Error updating user:', error);
+    logger.error({ err: error }, 'Error updating user');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -858,11 +950,12 @@ router.put('/admin/users/:id/password', requireAdmin, async (req: Request, res: 
 
     const { newPassword } = req.body;
 
-    if (!newPassword || newPassword.length < 6) {
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
       return res.status(400).json({
         success: false,
         error: 'Validation Error',
-        message: 'Neues Passwort muss mindestens 6 Zeichen lang sein',
+        message: passwordValidation.message,
       });
     }
 
@@ -881,7 +974,7 @@ router.put('/admin/users/:id/password', requireAdmin, async (req: Request, res: 
       message: 'Passwort zurückgesetzt',
     });
   } catch (error) {
-    console.error('Error resetting password:', error);
+    logger.error({ err: error }, 'Error resetting password');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -908,7 +1001,7 @@ router.get('/player-names', async (req: Request, res: Response) => {
       data: mapping,
     });
   } catch (error) {
-    console.error('Error fetching player names:', error);
+    logger.error({ err: error }, 'Error fetching player names');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -953,7 +1046,7 @@ router.delete('/admin/users/:id', requireAdmin, async (req: Request, res: Respon
       message: 'Benutzer gelöscht',
     });
   } catch (error) {
-    console.error('Error deleting user:', error);
+    logger.error({ err: error }, 'Error deleting user');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',

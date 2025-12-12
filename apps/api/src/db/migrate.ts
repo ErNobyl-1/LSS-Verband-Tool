@@ -3,11 +3,12 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { sql } from 'drizzle-orm';
 import * as schema from './schema.js';
+import { dbLogger as logger } from '../lib/logger.js';
 
 const { Pool } = pg;
 
 export async function runMigrations(existingPool?: pg.Pool): Promise<void> {
-  console.log('[DB] Starting database migrations...');
+  logger.info('Starting database migrations...');
 
   const pool = existingPool || new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -181,7 +182,7 @@ export async function runMigrations(existingPool?: pg.Pool): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at)`);
 
-  console.log('[DB] Database migrations completed successfully!');
+  logger.info('Database migrations completed successfully!');
 
   // Only close pool if we created it
   if (!existingPool) {
@@ -195,7 +196,7 @@ if (isMainModule) {
   runMigrations()
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error('Migration failed:', err);
+      logger.error({ err }, 'Migration failed');
       process.exit(1);
     });
 }

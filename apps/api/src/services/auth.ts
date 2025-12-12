@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { eq, and, gt, lt } from 'drizzle-orm';
 import { db, users, sessions, User } from '../db/index.js';
+import { authLogger as logger } from '../lib/logger.js';
 
 const SALT_ROUNDS = 10;
 const SESSION_DURATION_DAYS = 30;
@@ -102,7 +103,7 @@ export async function ensureAdminExists(): Promise<void> {
   const adminPassword = process.env.ADMIN_PASSWORD;
 
   if (!adminUsername || !adminPassword) {
-    console.log('[Auth] ADMIN_USERNAME or ADMIN_PASSWORD not set, skipping admin creation');
+    logger.warn('ADMIN_USERNAME or ADMIN_PASSWORD not set, skipping admin creation');
     return;
   }
 
@@ -118,7 +119,7 @@ export async function ensureAdminExists(): Promise<void> {
         isAdmin: true,
       })
       .where(eq(users.id, existingAdmin.id));
-    console.log(`[Auth] Admin account "${adminUsername}" updated`);
+    logger.info({ username: adminUsername }, 'Admin account updated');
   } else {
     // Create admin account
     const passwordHash = await hashPassword(adminPassword);
@@ -129,7 +130,7 @@ export async function ensureAdminExists(): Promise<void> {
       isActive: true,
       isAdmin: true,
     });
-    console.log(`[Auth] Admin account "${adminUsername}" created`);
+    logger.info({ username: adminUsername }, 'Admin account created');
   }
 }
 

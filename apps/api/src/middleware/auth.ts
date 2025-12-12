@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { validateSession } from '../services/auth.js';
 import { User } from '../db/index.js';
+import { apiLogger as logger } from '../lib/logger.js';
 
 // Extend Express Request type to include user
 declare global {
@@ -77,7 +78,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     req.user = user;
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
+    logger.error({ err: error }, 'Auth middleware error');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -144,7 +145,7 @@ export async function authMiddlewareAllowPending(req: Request, res: Response, ne
     req.user = user;
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
+    logger.error({ err: error }, 'Auth middleware error');
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',

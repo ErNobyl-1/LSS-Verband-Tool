@@ -1,34 +1,72 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
+import pinoHttp from 'pino-http';
 import apiRoutes from './routes/api.js';
 import { lssScraper } from './services/lss-scraper.js';
 import { runMigrations } from './db/migrate.js';
 import { initializeMissionTypes } from './services/mission-types.js';
 import { authMiddleware } from './middleware/auth.js';
-import { ensureAdminExists } from './services/auth.js';
+import { ensureAdminExists, cleanupExpiredSessions } from './services/auth.js';
+import { runDataRetention } from './services/data-retention.js';
+import { logger } from './lib/logger.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
 const HOST = process.env.API_HOST || '0.0.0.0';
 
-// Middleware
+// CORS configuration
+const corsOrigin = process.env.CORS_ORIGIN || '*';
+const allowedOrigins = corsOrigin === '*' ? '*' : corsOrigin.split(',').map(o => o.trim());
+
 app.use(cors({
-  origin: '*',
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: corsOrigin !== '*',
 }));
 app.use(express.json());
 
-// Request logging
+// Rate limiting
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 Minuten
+  max: 500, // max 500 Requests pro 15 Min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Zu viele Anfragen, bitte später erneut versuchen.' },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 Minuten
+  max: 10, // max 10 Login-Versuche pro 15 Min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Zu viele Login-Versuche, bitte später erneut versuchen.' },
+  skipSuccessfulRequests: true, // Erfolgreiche Logins nicht zählen
+});
+
+app.use('/api', generalLimiter);
+app.use('/api/auth/login', authLimiter);
+
+// Security headers
 app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    console.log(`${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
-  });
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  // HSTS wird vom Reverse Proxy (nginx) gesetzt
   next();
 });
+
+// Request logging with pino-http
+app.use(pinoHttp({
+  logger,
+  autoLogging: {
+    ignore: (req) => req.url === '/api/health' || req.url === '/api/stream',
+  },
+}));
 
 // Authentication middleware (checks token for all /api routes except health)
 app.use('/api', authMiddleware);
@@ -56,7 +94,7 @@ app.get('/', (req, res) => {
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
+  logger.error({ err }, 'Unhandled error');
   res.status(500).json({
     error: 'Internal Server Error',
     message: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred',
@@ -76,21 +114,65 @@ async function startServer() {
     await initializeMissionTypes();
 
     app.listen(Number(PORT), HOST, () => {
-      console.log(`🚀 LSS Verband Tool API running at http://${HOST}:${PORT}`);
-      console.log(`📡 SSE stream available at http://${HOST}:${PORT}/api/stream`);
+      logger.info({ host: HOST, port: PORT }, 'LSS Verband Tool API started');
+      logger.info({ url: `http://${HOST}:${PORT}/api/stream` }, 'SSE stream available');
+
+      // Session cleanup - einmal beim Start und dann stündlich
+      const runSessionCleanup = async () => {
+        try {
+          const deleted = await cleanupExpiredSessions();
+          if (deleted > 0) {
+            logger.info({ deleted }, 'Expired sessions cleaned up');
+          }
+        } catch (err) {
+          logger.error({ err }, 'Session cleanup failed');
+        }
+      };
+      runSessionCleanup(); // Beim Start
+      setInterval(runSessionCleanup, 60 * 60 * 1000); // Stündlich
+
+      // Data retention - einmal beim Start und dann täglich um 4:00 Uhr
+      const scheduleDataRetention = () => {
+        const now = new Date();
+        const nextRun = new Date();
+        nextRun.setHours(4, 0, 0, 0); // 4:00 Uhr
+        if (nextRun <= now) {
+          nextRun.setDate(nextRun.getDate() + 1); // Morgen 4:00 Uhr
+        }
+        const msUntilNextRun = nextRun.getTime() - now.getTime();
+
+        setTimeout(async () => {
+          try {
+            await runDataRetention();
+          } catch (err) {
+            logger.error({ err }, 'Data retention failed');
+          }
+          // Nach erstem Lauf: täglich wiederholen
+          setInterval(async () => {
+            try {
+              await runDataRetention();
+            } catch (err) {
+              logger.error({ err }, 'Data retention failed');
+            }
+          }, 24 * 60 * 60 * 1000); // Alle 24 Stunden
+        }, msUntilNextRun);
+
+        logger.info({ nextRun: nextRun.toISOString() }, 'Data retention scheduled');
+      };
+      scheduleDataRetention();
 
       // Start the LSS scraper if credentials are configured
       if (process.env.LSS_EMAIL && process.env.LSS_PASSWORD) {
-        console.log(`🌐 Starting LSS scraper...`);
+        logger.info('Starting LSS scraper...');
         lssScraper.start().catch((err) => {
-          console.error('Failed to start LSS scraper:', err);
+          logger.error({ err }, 'Failed to start LSS scraper');
         });
       } else {
-        console.log(`ℹ️  LSS scraper not started (LSS_EMAIL/LSS_PASSWORD not configured)`);
+        logger.warn('LSS scraper not started (LSS_EMAIL/LSS_PASSWORD not configured)');
       }
     });
   } catch (error) {
-    console.error('Failed to start server:', error);
+    logger.fatal({ err: error }, 'Failed to start server');
     process.exit(1);
   }
 }
@@ -99,13 +181,13 @@ startServer();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('Received SIGTERM, shutting down...');
+  logger.info('Received SIGTERM, shutting down...');
   await lssScraper.stop();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  console.log('Received SIGINT, shutting down...');
+  logger.info('Received SIGINT, shutting down...');
   await lssScraper.stop();
   process.exit(0);
 });
