@@ -50,15 +50,15 @@ function getProgressPercent(incident: Incident): number | null {
   return isNaN(percent) ? null : percent;
 }
 
-// Get vehicle counts from rawJson
-function getVehicleCounts(incident: Incident): { driving: number; atMission: number } | null {
+// Get participating players from rawJson
+function getParticipatingPlayers(incident: Incident): { driving: string[]; atMission: string[] } | null {
   const rawJson = incident.rawJson as Record<string, unknown> | null;
   if (!rawJson) return null;
 
-  const driving = typeof rawJson.vehicles_driving === 'number' ? rawJson.vehicles_driving : 0;
-  const atMission = typeof rawJson.vehicles_at_mission === 'number' ? rawJson.vehicles_at_mission : 0;
+  const driving = Array.isArray(rawJson.players_driving) ? rawJson.players_driving as string[] : [];
+  const atMission = Array.isArray(rawJson.players_at_mission) ? rawJson.players_at_mission as string[] : [];
 
-  if (driving === 0 && atMission === 0) return null;
+  if (driving.length === 0 && atMission.length === 0) return null;
   return { driving, atMission };
 }
 
@@ -131,7 +131,12 @@ function PlannedMissionTimer({ incident }: { incident: Incident }) {
   const progressPercent = getProgressPercent(incident);
   const startTime = calculateStartTime(incident);
   const endTime = calculateEndTime(incident);
-  const vehicleCounts = getVehicleCounts(incident);
+  const players = getParticipatingPlayers(incident);
+
+  // Combine all unique players
+  const allPlayers = players
+    ? [...new Set([...players.atMission, ...players.driving])]
+    : [];
 
   // Mission hasn't started yet - show countdown to start
   if (toStart !== null && toStart > 0) {
@@ -144,6 +149,12 @@ function PlannedMissionTimer({ incident }: { incident: Incident }) {
             {startTime && ` (${formatTime(startTime)})`}
           </span>
         </div>
+        {allPlayers.length > 0 && (
+          <div className="mt-1 text-gray-600">
+            <span>Spieler: </span>
+            <span>{allPlayers.join(', ')}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -174,10 +185,10 @@ function PlannedMissionTimer({ incident }: { incident: Incident }) {
             {endTime && ` (${formatTime(endTime)})`}
           </span>
         </div>
-        {vehicleCounts && (
-          <div className="flex justify-between mt-1 text-gray-600">
-            <span>Fahrzeuge:</span>
-            <span>{vehicleCounts.atMission} vor Ort{vehicleCounts.driving > 0 && `, ${vehicleCounts.driving} auf Anfahrt`}</span>
+        {allPlayers.length > 0 && (
+          <div className="mt-1 text-gray-600">
+            <span>Spieler: </span>
+            <span>{allPlayers.join(', ')}</span>
           </div>
         )}
       </div>
@@ -214,10 +225,10 @@ function PlannedMissionTimer({ incident }: { incident: Incident }) {
         <div className="w-full bg-gray-200 rounded-full h-1.5">
           <div className={`${barColor} h-1.5 rounded-full transition-all`} style={{ width: `${progressPercent}%` }} />
         </div>
-        {vehicleCounts && (
-          <div className="flex justify-between mt-1 text-gray-600">
-            <span>Fahrzeuge:</span>
-            <span>{vehicleCounts.atMission} vor Ort{vehicleCounts.driving > 0 && `, ${vehicleCounts.driving} auf Anfahrt`}</span>
+        {allPlayers.length > 0 && (
+          <div className="mt-1 text-gray-600">
+            <span>Spieler: </span>
+            <span>{allPlayers.join(', ')}</span>
           </div>
         )}
       </div>

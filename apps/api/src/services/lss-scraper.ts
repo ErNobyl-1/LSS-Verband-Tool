@@ -381,96 +381,98 @@ class LssScraper {
     }
   }
 
-  // Fetch mission details for planned missions to get exact remaining time
+  // Fetch mission details for planned missions to get exact remaining time and participating players
   private async fetchPlannedMissionDetails(missions: MissionData[]): Promise<void> {
     if (!this.page || missions.length === 0) return;
 
-    const missionIds = missions.map(m => m.ls_id);
+    console.log(`[LSS-Scraper] Fetching details for ${missions.length} planned missions...`);
 
-    try {
-      // Fetch all mission details in parallel using the browser's fetch API
-      const detailsMap = await this.page.evaluate(async (ids: string[]) => {
-        const results: Record<string, { remaining_seconds: number | null; remaining_at: string; vehicles_driving: number; vehicles_at_mission: number }> = {};
+    // Process missions sequentially to avoid issues with page navigation
+    let detailsCount = 0;
+    let withTimeCount = 0;
 
-        // Fetch in parallel (max 5 concurrent to avoid rate limiting)
-        const batchSize = 5;
-        for (let i = 0; i < ids.length; i += batchSize) {
-          const batch = ids.slice(i, i + batchSize);
-          const promises = batch.map(async (missionId) => {
-            try {
-              const res = await fetch(`/missions/${missionId}`);
-              if (!res.ok) return { missionId, data: null };
+    for (const mission of missions) {
+      try {
+        // Navigate to mission detail page
+        const url = `${this.config.baseUrl}/missions/${mission.ls_id}`;
+        const response = await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
-              const html = await res.text();
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(html, 'text/html');
+        // 304 is fine (not modified), any 2xx or 304 is OK
+        const status = response?.status();
+        if (!response || (status !== 304 && (status === undefined || status < 200 || status >= 400))) {
+          console.log(`[LSS-Scraper] Failed to load mission ${mission.ls_id}: ${status}`);
+          continue;
+        }
 
-              // Extract remaining time from countdown element
-              // Format: "01:47:33" (HH:MM:SS)
-              const countdownEl = doc.getElementById('mission_countdown_' + missionId);
-              let remainingSeconds: number | null = null;
+        // Extract data from the page
+        // Note: Using a single function string to avoid TypeScript transpilation issues
+        const details = await this.page.evaluate(`
+          (function() {
+            var missionId = "${mission.ls_id}";
+            var remainingSeconds = null;
 
-              if (countdownEl) {
-                const timeText = countdownEl.textContent?.trim();
-                if (timeText) {
-                  const parts = timeText.split(':').map(p => parseInt(p, 10));
-                  if (parts.length === 3 && parts.every(p => !isNaN(p))) {
-                    remainingSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-                  } else if (parts.length === 2 && parts.every(p => !isNaN(p))) {
-                    remainingSeconds = parts[0] * 60 + parts[1];
-                  }
+            var countdownEl = document.getElementById('mission_countdown_' + missionId);
+            if (countdownEl) {
+              var timeText = countdownEl.textContent ? countdownEl.textContent.trim() : '';
+              if (timeText) {
+                var parts = timeText.split(':').map(function(p) { return parseInt(p, 10); });
+                if (parts.length === 3 && parts.every(function(p) { return !isNaN(p); })) {
+                  remainingSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+                } else if (parts.length === 2 && parts.every(function(p) { return !isNaN(p); })) {
+                  remainingSeconds = parts[0] * 60 + parts[1];
                 }
               }
+            }
 
-              // Count vehicles
-              const drivingTable = doc.getElementById('mission_vehicle_driving');
-              const atMissionTable = doc.getElementById('mission_vehicle_at_mission');
-              const vehiclesDriving = drivingTable ? drivingTable.querySelectorAll('tbody tr[id^="vehicle_row_"]').length : 0;
-              const vehiclesAtMission = atMissionTable ? atMissionTable.querySelectorAll('tbody tr[id^="vehicle_row_"]').length : 0;
-
-              return {
-                missionId,
-                data: {
-                  remaining_seconds: remainingSeconds,
-                  remaining_at: new Date().toISOString(),
-                  vehicles_driving: vehiclesDriving,
-                  vehicles_at_mission: vehiclesAtMission,
+            // Extract players from vehicle table
+            function getPlayers(tableId) {
+              var table = document.getElementById(tableId);
+              if (!table) return [];
+              var playerLinks = table.querySelectorAll('a[href^="/profile/"]');
+              var players = [];
+              var seen = {};
+              playerLinks.forEach(function(link) {
+                var name = link.textContent ? link.textContent.trim() : '';
+                if (name && !seen[name]) {
+                  seen[name] = true;
+                  players.push(name);
                 }
-              };
-            } catch {
-              return { missionId, data: null };
+              });
+              return players;
             }
-          });
 
-          const batchResults = await Promise.all(promises);
-          for (const result of batchResults) {
-            if (result.data) {
-              results[result.missionId] = result.data;
-            }
-          }
-        }
+            return {
+              remaining_seconds: remainingSeconds,
+              remaining_at: new Date().toISOString(),
+              players_driving: getPlayers('mission_vehicle_driving'),
+              players_at_mission: getPlayers('mission_vehicle_at_mission'),
+            };
+          })()
+        `) as { remaining_seconds: number | null; remaining_at: string; players_driving: string[]; players_at_mission: string[] };
 
-        return results;
-      }, missionIds);
+        // Merge into raw_json
+        mission.raw_json.remaining_seconds = details.remaining_seconds;
+        mission.raw_json.remaining_at = details.remaining_at;
+        mission.raw_json.players_driving = details.players_driving;
+        mission.raw_json.players_at_mission = details.players_at_mission;
 
-      // Merge details into mission raw_json
-      let detailsCount = 0;
-      for (const mission of missions) {
-        const details = detailsMap[mission.ls_id];
-        if (details) {
-          mission.raw_json.remaining_seconds = details.remaining_seconds;
-          mission.raw_json.remaining_at = details.remaining_at;
-          mission.raw_json.vehicles_driving = details.vehicles_driving;
-          mission.raw_json.vehicles_at_mission = details.vehicles_at_mission;
-          detailsCount++;
-        }
+        detailsCount++;
+        if (details.remaining_seconds !== null) withTimeCount++;
+
+      } catch (error) {
+        console.error(`[LSS-Scraper] Error fetching details for mission ${mission.ls_id}:`, error);
       }
+    }
 
-      if (detailsCount > 0) {
-        console.log(`[LSS-Scraper] Fetched details for ${detailsCount}/${missions.length} planned missions`);
-      }
-    } catch (error) {
-      console.error('[LSS-Scraper] Failed to fetch planned mission details:', error);
+    // Navigate back to main page
+    try {
+      await this.page.goto(this.config.baseUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+    } catch {
+      // Ignore navigation errors
+    }
+
+    if (detailsCount > 0) {
+      console.log(`[LSS-Scraper] Fetched details for ${detailsCount}/${missions.length} planned missions (${withTimeCount} with countdown)`);
     }
   }
 
