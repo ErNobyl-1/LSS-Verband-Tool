@@ -20,6 +20,10 @@ function getMarkerColor(source: string): string {
   return colors[source] || colors.unknown;
 }
 
+function cleanTitle(title: string) {
+  return title.replace(/\s*\[Verband\]\s*/g, '').trim();
+}
+
 export function Map({ incidents, selectedId, onSelect }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -102,10 +106,10 @@ export function Map({ incidents, selectedId, onSelect }: MapProps) {
         const popup = new maplibregl.Popup({ offset: 25, closeButton: false })
           .setHTML(`
             <div style="padding: 4px;">
-              <div style="font-weight: 600; margin-bottom: 4px;">${incident.title}</div>
+              <div style="font-weight: 600; margin-bottom: 4px;">${cleanTitle(incident.title)}</div>
               ${incident.address ? `<div style="font-size: 12px; color: #666;">${incident.address}</div>` : ''}
               <div style="font-size: 11px; color: #888; margin-top: 4px;">
-                ${incident.source.replace('_', ' ')} | ${incident.status || 'aktiv'}
+                ${incident.status === 'red' ? 'Unbearbeitet' : incident.status === 'yellow' ? 'Anfahrt' : incident.status === 'green' ? 'In Durchführung' : 'Unbekannt'}
               </div>
             </div>
           `);

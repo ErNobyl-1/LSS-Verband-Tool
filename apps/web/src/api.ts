@@ -5,10 +5,6 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 export async function fetchIncidents(filters: FilterState): Promise<IncidentsResponse> {
   const params = new URLSearchParams();
 
-  if (filters.source !== 'all') {
-    params.set('source', filters.source);
-  }
-
   if (filters.category !== 'all') {
     params.set('category', filters.category);
   }

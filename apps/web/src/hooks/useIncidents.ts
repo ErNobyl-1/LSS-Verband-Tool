@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Incident, FilterState, SSEMessage } from '../types';
 import { fetchIncidents, createSSEConnection } from '../api';
 
+const RETRY_INTERVAL = 5000; // 5 seconds
+
 export function useIncidents(filters: FilterState) {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
@@ -9,20 +11,39 @@ export function useIncidents(filters: FilterState) {
   const [connected, setConnected] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const filtersRef = useRef(filters);
+
+  // Keep filters ref up to date
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   // Fetch incidents from API
   const loadIncidents = useCallback(async () => {
+    // Clear any pending retry
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+
     try {
       setLoading(true);
       setError(null);
-      const response = await fetchIncidents(filters);
+      const response = await fetchIncidents(filtersRef.current);
       setIncidents(response.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error');
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      setError(errorMessage);
+
+      // Schedule retry on error
+      retryTimeoutRef.current = setTimeout(() => {
+        loadIncidents();
+      }, RETRY_INTERVAL);
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, []);
 
   // Handle SSE messages
   const handleSSEMessage = useCallback((data: SSEMessage) => {
@@ -62,7 +83,11 @@ export function useIncidents(filters: FilterState) {
     const eventSource = createSSEConnection(
       handleSSEMessage,
       () => setConnected(false),
-      () => setConnected(true)
+      () => {
+        setConnected(true);
+        // Reload incidents when SSE connects (API is available)
+        loadIncidents();
+      }
     );
 
     eventSourceRef.current = eventSource;
@@ -71,12 +96,21 @@ export function useIncidents(filters: FilterState) {
       eventSource.close();
       eventSourceRef.current = null;
     };
-  }, [handleSSEMessage]);
+  }, [handleSSEMessage, loadIncidents]);
 
   // Load incidents on mount and filter change
   useEffect(() => {
     loadIncidents();
-  }, [loadIncidents]);
+  }, [filters, loadIncidents]);
+
+  // Cleanup retry timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return {
     incidents,

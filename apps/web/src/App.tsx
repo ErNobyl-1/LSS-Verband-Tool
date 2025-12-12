@@ -11,7 +11,6 @@ type View = 'list' | 'map';
 
 function App() {
   const [filters, setFilters] = useState<FilterState>({
-    source: 'all',
     category: 'all',
     status: 'all',
     search: '',
@@ -40,8 +39,6 @@ function App() {
       emergency: incidents.filter((i) => i.category === 'emergency').length,
       planned: incidents.filter((i) => i.category === 'planned').length,
       event: incidents.filter((i) => i.category === 'event').length,
-      own: incidents.filter((i) => i.source === 'own_shared').length,
-      alliance: incidents.filter((i) => i.source === 'alliance' || i.source === 'alliance_event').length,
     };
   }, [incidents]);
 
@@ -53,7 +50,7 @@ function App() {
     <div className="h-screen flex flex-col bg-gray-100">
       <Header connected={connected} incidentCount={filteredIncidents.length} />
 
-      <Filters filters={filters} onChange={setFilters} onRefresh={refresh} />
+      <Filters filters={filters} onChange={setFilters} />
 
       {/* Quick Stats */}
       <div className="bg-white border-b px-6 py-2 flex items-center gap-6 text-sm">
@@ -68,14 +65,6 @@ function App() {
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-purple-500" />
           <span>GSL: {stats.event}</span>
-        </div>
-        <div className="border-l pl-6 flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-cyan-500" />
-          <span>Eigene: {stats.own}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-blue-500" />
-          <span>Verband: {stats.alliance}</span>
         </div>
 
         <div className="ml-auto flex rounded-lg border overflow-hidden">

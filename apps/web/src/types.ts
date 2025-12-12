@@ -32,12 +32,10 @@ export interface SSEMessage {
   timestamp: string;
 }
 
-export type SourceFilter = 'all' | 'alliance' | 'alliance_event' | 'own' | 'own_shared';
 export type CategoryFilter = 'all' | 'emergency' | 'planned' | 'event';
 export type StatusFilter = 'all' | 'red' | 'yellow' | 'green';
 
 export interface FilterState {
-  source: SourceFilter;
   category: CategoryFilter;
   status: StatusFilter;
   search: string;

@@ -10,6 +10,10 @@ function formatDateTime(dateString: string) {
   return date.toLocaleString('de-DE');
 }
 
+function cleanTitle(title: string) {
+  return title.replace(/\s*\[Verband\]\s*/g, '').trim();
+}
+
 export function IncidentDetails({ incident, onClose }: IncidentDetailsProps) {
   if (!incident) {
     return (
@@ -22,7 +26,7 @@ export function IncidentDetails({ incident, onClose }: IncidentDetailsProps) {
   return (
     <div className="p-4 h-full overflow-auto">
       <div className="flex items-start justify-between mb-4">
-        <h2 className="text-xl font-bold text-gray-900">{incident.title}</h2>
+        <h2 className="text-xl font-bold text-gray-900">{cleanTitle(incident.title)}</h2>
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
@@ -44,7 +48,7 @@ export function IncidentDetails({ incident, onClose }: IncidentDetailsProps) {
           </div>
           <div>
             <label className="text-xs text-gray-500 uppercase">Status</label>
-            <p className="text-sm capitalize">{incident.status || 'Aktiv'}</p>
+            <p className="text-sm">{incident.status === 'red' ? 'Unbearbeitet' : incident.status === 'yellow' ? 'Anfahrt' : incident.status === 'green' ? 'In Durchführung' : 'Unbekannt'}</p>
           </div>
           <div>
             <label className="text-xs text-gray-500 uppercase">Typ</label>
