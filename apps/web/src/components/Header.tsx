@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useMembers } from '../hooks/useMembers';
 import { useAllianceStats } from '../hooks/useAllianceStats';
@@ -13,10 +13,20 @@ interface HeaderProps {
 }
 
 export function Header({ connected, stats }: HeaderProps) {
-  const { onlineMembers, counts, loading: membersLoading } = useMembers();
+  const { members, onlineMembers, counts, loading: membersLoading } = useMembers();
   const { stats: allianceStats } = useAllianceStats();
   const [showDropdown, setShowDropdown] = useState(false);
   const location = useLocation();
+
+  // Alphabetisch sortierte Listen
+  const sortedOnlineMembers = useMemo(
+    () => [...onlineMembers].sort((a, b) => a.name.localeCompare(b.name, 'de')),
+    [onlineMembers]
+  );
+  const sortedOfflineMembers = useMemo(
+    () => members.filter(m => !m.isOnline).sort((a, b) => a.name.localeCompare(b.name, 'de')),
+    [members]
+  );
 
   const formatCredits = (credits: number) => {
     return credits.toLocaleString('de-DE');
@@ -106,25 +116,56 @@ export function Header({ connected, stats }: HeaderProps) {
                   className="fixed inset-0 z-10"
                   onClick={() => setShowDropdown(false)}
                 />
-                <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border z-20 max-h-80 overflow-auto">
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border z-20 max-h-96 overflow-auto">
+                  {/* Online Members Section */}
                   <div className="p-2 border-b bg-gray-50">
                     <span className="text-xs font-medium text-gray-500 uppercase">
-                      Online Mitglieder
+                      Online ({sortedOnlineMembers.length})
                     </span>
                   </div>
-                  {onlineMembers.length === 0 ? (
+                  {sortedOnlineMembers.length === 0 ? (
                     <div className="p-3 text-sm text-gray-500 text-center">
                       Niemand online
                     </div>
                   ) : (
                     <ul className="py-1">
-                      {onlineMembers.map((member) => (
+                      {sortedOnlineMembers.map((member) => (
                         <li
                           key={member.id}
                           className="px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-gray-900"
                         >
                           <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
                           <span className="text-sm truncate">{member.name}</span>
+                          {member.roleFlags.owner && (
+                            <span className="text-xs bg-amber-500 text-white px-1 rounded ml-auto">Owner</span>
+                          )}
+                          {member.roleFlags.admin && !member.roleFlags.owner && (
+                            <span className="text-xs bg-red-500 text-white px-1 rounded ml-auto">Admin</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {/* Offline Members Section */}
+                  <div className="p-2 border-b border-t bg-gray-50">
+                    <span className="text-xs font-medium text-gray-500 uppercase">
+                      Offline ({sortedOfflineMembers.length})
+                    </span>
+                  </div>
+                  {sortedOfflineMembers.length === 0 ? (
+                    <div className="p-3 text-sm text-gray-500 text-center">
+                      Alle online
+                    </div>
+                  ) : (
+                    <ul className="py-1">
+                      {sortedOfflineMembers.map((member) => (
+                        <li
+                          key={member.id}
+                          className="px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-gray-900"
+                        >
+                          <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
+                          <span className="text-sm truncate text-gray-600">{member.name}</span>
                           {member.roleFlags.owner && (
                             <span className="text-xs bg-amber-500 text-white px-1 rounded ml-auto">Owner</span>
                           )}
