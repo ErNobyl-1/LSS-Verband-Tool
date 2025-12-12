@@ -1,5 +1,8 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
-import { upsertIncidents } from './incidents.js';
+import { upsertIncidents, deleteStaleIncidents } from './incidents.js';
+import { saveAllianceStats } from './alliance-stats.js';
+import { upsertMembers, filterExcludedMembers } from './alliance-members.js';
+import { broadcastDeleted } from './sse.js';
 
 // Mission list configuration - same as Tampermonkey script
 const MISSION_LISTS = [
@@ -41,6 +44,8 @@ class LssScraper {
   private page: Page | null = null;
   private isRunning = false;
   private intervalId: NodeJS.Timeout | null = null;
+  private allianceStatsIntervalId: NodeJS.Timeout | null = null;
+  private memberTrackingIntervalId: NodeJS.Timeout | null = null;
   private loginAttempts = 0;
   private maxLoginAttempts = 3;
 
@@ -48,6 +53,8 @@ class LssScraper {
     email: process.env.LSS_EMAIL || '',
     password: process.env.LSS_PASSWORD || '',
     scrapeInterval: parseInt(process.env.LSS_SCRAPE_INTERVAL_MS || '10000', 10),
+    allianceStatsInterval: parseInt(process.env.LSS_ALLIANCE_STATS_INTERVAL_MS || '300000', 10), // 5 minutes default
+    memberTrackingInterval: parseInt(process.env.LSS_MEMBER_TRACKING_INTERVAL_MS || '60000', 10), // 1 minute default
     headless: process.env.LSS_HEADLESS !== 'false',
     baseUrl: 'https://www.leitstellenspiel.de',
   };
@@ -60,12 +67,16 @@ class LssScraper {
 
     console.log('[LSS-Scraper] Starting...');
     console.log(`[LSS-Scraper] Scrape interval: ${this.config.scrapeInterval}ms`);
+    console.log(`[LSS-Scraper] Alliance stats interval: ${this.config.allianceStatsInterval}ms`);
+    console.log(`[LSS-Scraper] Member tracking interval: ${this.config.memberTrackingInterval}ms`);
     console.log(`[LSS-Scraper] Headless mode: ${this.config.headless}`);
 
     try {
       await this.initBrowser();
       await this.ensureLoggedIn();
       this.startScrapeLoop();
+      this.startAllianceStatsLoop();
+      this.startMemberTrackingLoop();
     } catch (error) {
       console.error('[LSS-Scraper] Failed to start:', error);
       await this.cleanup();
@@ -77,6 +88,14 @@ class LssScraper {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
+    }
+    if (this.allianceStatsIntervalId) {
+      clearInterval(this.allianceStatsIntervalId);
+      this.allianceStatsIntervalId = null;
+    }
+    if (this.memberTrackingIntervalId) {
+      clearInterval(this.memberTrackingIntervalId);
+      this.memberTrackingIntervalId = null;
     }
     await this.cleanup();
   }
@@ -215,6 +234,83 @@ class LssScraper {
     }, this.config.scrapeInterval);
   }
 
+  private startAllianceStatsLoop(): void {
+    console.log('[LSS-Scraper] Starting alliance stats loop');
+
+    // Initial fetch
+    this.fetchAllianceStats();
+
+    // Set up interval (default: every 5 minutes)
+    this.allianceStatsIntervalId = setInterval(() => {
+      this.fetchAllianceStats();
+    }, this.config.allianceStatsInterval);
+  }
+
+  private async fetchAllianceStats(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      // Use the existing session to fetch the API endpoint
+      const response = await this.page.evaluate(async () => {
+        const res = await fetch('/api/allianceinfo');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        return await res.json();
+      });
+
+      if (response && typeof response.id === 'number') {
+        await saveAllianceStats(response);
+      } else {
+        console.error('[LSS-Scraper] Invalid alliance info response:', response);
+      }
+    } catch (error) {
+      console.error('[LSS-Scraper] Failed to fetch alliance stats:', error);
+    }
+  }
+
+  private startMemberTrackingLoop(): void {
+    console.log('[LSS-Scraper] Starting member tracking loop');
+
+    // Initial fetch
+    this.fetchAndTrackMembers();
+
+    // Set up interval (default: every 1 minute)
+    this.memberTrackingIntervalId = setInterval(() => {
+      this.fetchAndTrackMembers();
+    }, this.config.memberTrackingInterval);
+  }
+
+  private async fetchAndTrackMembers(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      // Use the existing session to fetch the API endpoint
+      const response = await this.page.evaluate(async () => {
+        const res = await fetch('/api/allianceinfo');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        return await res.json();
+      });
+
+      if (response && typeof response.id === 'number' && Array.isArray(response.users)) {
+        const result = await upsertMembers(response.id, response.users);
+
+        // Filter for logging (to show accurate counts)
+        const filteredMembers = filterExcludedMembers(response.users);
+        const onlineCount = filteredMembers.filter((m: { online: boolean }) => m.online).length;
+
+        console.log(
+          `[LSS-Scraper] Members: ${filteredMembers.length} total, ${onlineCount} online ` +
+          `(${result.created} new, ${result.updated} updated, ${result.activityChanges} status changes)`
+        );
+      }
+    } catch (error) {
+      console.error('[LSS-Scraper] Failed to track members:', error);
+    }
+  }
+
   private async scrape(): Promise<void> {
     if (this.isRunning || !this.page) return;
 
@@ -235,6 +331,16 @@ class LssScraper {
 
       // Extract missions
       const { missions, stats } = await this.extractMissions();
+
+      // Get list of active mission IDs from the DOM
+      const activeLsIds = missions.map(m => m.ls_id);
+
+      // Delete incidents that are no longer in the DOM (completed missions)
+      const deletedIncidents = await deleteStaleIncidents(activeLsIds);
+      if (deletedIncidents.length > 0) {
+        broadcastDeleted(deletedIncidents);
+        console.log(`[LSS-Scraper] Deleted ${deletedIncidents.length} completed missions`);
+      }
 
       if (missions.length > 0) {
         // Save to database (SSE broadcast happens inside upsertIncidents)

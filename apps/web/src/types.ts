@@ -26,9 +26,10 @@ export interface IncidentsResponse {
 }
 
 export interface SSEMessage {
-  type: 'created' | 'updated' | 'batch_upsert';
+  type: 'created' | 'updated' | 'batch_upsert' | 'deleted';
   incident?: Incident;
   incidents?: Incident[];
+  deletedIds?: string[];
   timestamp: string;
 }
 
@@ -39,4 +40,54 @@ export interface FilterState {
   category: CategoryFilter;
   status: StatusFilter;
   search: string;
+}
+
+export interface AllianceStats {
+  id: number;
+  allianceId: number;
+  allianceName: string;
+  creditsTotal: number;
+  rank: number;
+  userCount: number | null;
+  userOnlineCount: number | null;
+  recordedAt: string;
+}
+
+export interface AllianceStatsResponse {
+  success: boolean;
+  data: AllianceStats | null;
+  message?: string;
+}
+
+export interface AllianceStatsHistoryResponse {
+  success: boolean;
+  data: AllianceStats[];
+  meta: {
+    allianceId: number;
+    period?: string;
+    count: number;
+  };
+}
+
+export interface AllianceMember {
+  id: number;
+  lssMemberId: number;
+  allianceId: number;
+  name: string;
+  roles: string[];
+  caption: string | null;
+  isOnline: boolean;
+  roleFlags: Record<string, boolean>;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  lastOnlineAt: string | null;
+}
+
+export interface MembersResponse {
+  success: boolean;
+  data: AllianceMember[];
+  meta: {
+    total: number;
+    online: number;
+  };
 }

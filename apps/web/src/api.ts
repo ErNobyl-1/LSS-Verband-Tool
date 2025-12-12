@@ -1,4 +1,4 @@
-import { IncidentsResponse, FilterState, SSEMessage } from './types';
+import { IncidentsResponse, FilterState, SSEMessage, AllianceStatsResponse, AllianceStatsHistoryResponse, MembersResponse } from './types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -60,6 +60,16 @@ export function createSSEConnection(
     }
   });
 
+  eventSource.addEventListener('deleted', (event) => {
+    try {
+      const data = JSON.parse(event.data) as SSEMessage;
+      console.log('[SSE] Deleted event:', data.deletedIds?.length, 'incidents removed');
+      onMessage(data);
+    } catch (e) {
+      console.error('[SSE] Failed to parse deleted event:', e);
+    }
+  });
+
   eventSource.addEventListener('heartbeat', () => {
     // Heartbeat received - connection is alive
   });
@@ -70,4 +80,43 @@ export function createSSEConnection(
   };
 
   return eventSource;
+}
+
+export async function fetchAllianceStats(): Promise<AllianceStatsResponse> {
+  const response = await fetch(`${API_URL}/api/alliance/stats`);
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchAllianceStatsHistory(
+  period: 'hour' | 'day' | 'week' | 'month' = 'day',
+  limit = 30
+): Promise<AllianceStatsHistoryResponse> {
+  const params = new URLSearchParams({
+    period,
+    limit: limit.toString(),
+  });
+
+  const response = await fetch(`${API_URL}/api/alliance/stats/history?${params.toString()}`);
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchMembers(onlineOnly = false): Promise<MembersResponse> {
+  const params = onlineOnly ? '?online_only=true' : '';
+  const response = await fetch(`${API_URL}/api/members${params}`);
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
+
+  return response.json();
 }

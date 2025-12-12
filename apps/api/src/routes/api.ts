@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { incidentQuerySchema } from '../validation/schemas.js';
 import { queryIncidents, getIncidentById } from '../services/incidents.js';
 import { addClient, removeClient, getClientCount } from '../services/sse.js';
+import { getLatestAllianceStats, getAllianceStatsHistory, getAggregatedStats } from '../services/alliance-stats.js';
+import { getAllMembers, getOnlineMembers, getMemberById, getMemberActivityHistory, getMemberCounts } from '../services/alliance-members.js';
 
 const router = Router();
 
@@ -111,6 +113,237 @@ router.get('/health', (req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     sseClients: getClientCount(),
   });
+});
+
+// GET /api/alliance/stats - Get latest alliance stats
+router.get('/alliance/stats', async (req: Request, res: Response) => {
+  try {
+    const latest = await getLatestAllianceStats();
+
+    if (!latest) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No alliance stats available yet',
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: latest,
+    });
+  } catch (error) {
+    console.error('Error fetching alliance stats:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/alliance/stats/history - Get alliance stats history
+router.get('/alliance/stats/history', async (req: Request, res: Response) => {
+  try {
+    const { alliance_id, period, limit, from, to } = req.query;
+
+    // If no alliance_id provided, try to get from latest stats
+    let allianceId: number;
+    if (alliance_id) {
+      allianceId = parseInt(alliance_id as string, 10);
+      if (isNaN(allianceId)) {
+        return res.status(400).json({
+          error: 'Validation Error',
+          message: 'Invalid alliance_id',
+        });
+      }
+    } else {
+      const latest = await getLatestAllianceStats();
+      if (!latest) {
+        return res.json({
+          success: true,
+          data: [],
+          message: 'No alliance stats available yet',
+        });
+      }
+      allianceId = latest.allianceId;
+    }
+
+    // Use aggregated stats if period is specified
+    if (period) {
+      const validPeriods = ['hour', 'day', 'week', 'month'];
+      if (!validPeriods.includes(period as string)) {
+        return res.status(400).json({
+          error: 'Validation Error',
+          message: 'Invalid period. Must be one of: hour, day, week, month',
+        });
+      }
+
+      const limitNum = limit ? parseInt(limit as string, 10) : 30;
+      const history = await getAggregatedStats(
+        allianceId,
+        period as 'hour' | 'day' | 'week' | 'month',
+        limitNum
+      );
+
+      return res.json({
+        success: true,
+        data: history,
+        meta: {
+          allianceId,
+          period,
+          count: history.length,
+        },
+      });
+    }
+
+    // Otherwise return raw history with optional date filters
+    const options: { from?: Date; to?: Date; limit?: number } = {};
+    if (from) options.from = new Date(from as string);
+    if (to) options.to = new Date(to as string);
+    if (limit) options.limit = parseInt(limit as string, 10);
+
+    const history = await getAllianceStatsHistory(allianceId, options);
+
+    return res.json({
+      success: true,
+      data: history,
+      meta: {
+        allianceId,
+        count: history.length,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching alliance stats history:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// ============================================
+// ALLIANCE MEMBERS ENDPOINTS
+// ============================================
+
+// GET /api/members - Get all members (excludes configured excluded members)
+router.get('/members', async (req: Request, res: Response) => {
+  try {
+    const { online_only } = req.query;
+
+    const members = online_only === 'true'
+      ? await getOnlineMembers()
+      : await getAllMembers();
+
+    const counts = await getMemberCounts();
+
+    return res.json({
+      success: true,
+      data: members,
+      meta: {
+        total: counts.total,
+        online: counts.online,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching members:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/members/online - Get only online members
+router.get('/members/online', async (req: Request, res: Response) => {
+  try {
+    const members = await getOnlineMembers();
+    const counts = await getMemberCounts();
+
+    return res.json({
+      success: true,
+      data: members,
+      meta: {
+        total: counts.total,
+        online: counts.online,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching online members:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/members/:id - Get single member by LSS ID
+router.get('/members/:id', async (req: Request, res: Response) => {
+  try {
+    const lssMemberId = parseInt(req.params.id, 10);
+
+    if (isNaN(lssMemberId)) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Invalid member ID',
+      });
+    }
+
+    const member = await getMemberById(lssMemberId);
+
+    if (!member) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Member not found',
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: member,
+    });
+  } catch (error) {
+    console.error('Error fetching member:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// GET /api/members/:id/activity - Get member activity history
+router.get('/members/:id/activity', async (req: Request, res: Response) => {
+  try {
+    const lssMemberId = parseInt(req.params.id, 10);
+    const { from, limit } = req.query;
+
+    if (isNaN(lssMemberId)) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Invalid member ID',
+      });
+    }
+
+    const options: { from?: Date; limit?: number } = {};
+    if (from) options.from = new Date(from as string);
+    if (limit) options.limit = parseInt(limit as string, 10);
+
+    const activity = await getMemberActivityHistory(lssMemberId, options);
+
+    return res.json({
+      success: true,
+      data: activity,
+      meta: {
+        lssMemberId,
+        count: activity.length,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching member activity:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
 });
 
 export default router;

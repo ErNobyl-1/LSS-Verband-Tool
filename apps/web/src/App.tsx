@@ -4,6 +4,8 @@ import { Filters } from './components/Filters';
 import { IncidentList } from './components/IncidentList';
 import { IncidentDetails } from './components/IncidentDetails';
 import { Map } from './components/Map';
+import { AllianceStats } from './components/AllianceStats';
+import { OnlineMembers } from './components/OnlineMembers';
 import { useIncidents } from './hooks/useIncidents';
 import { Incident, FilterState } from './types';
 
@@ -65,6 +67,14 @@ function App() {
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-purple-500" />
           <span>GSL: {stats.event}</span>
+        </div>
+
+        <div className="border-l pl-6">
+          <AllianceStats />
+        </div>
+
+        <div className="border-l pl-6">
+          <OnlineMembers />
         </div>
 
         <div className="ml-auto flex rounded-lg border overflow-hidden">

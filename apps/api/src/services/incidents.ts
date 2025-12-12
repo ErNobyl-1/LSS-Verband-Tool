@@ -164,3 +164,34 @@ export async function getIncidentByLsId(lsId: string): Promise<Incident | null> 
   });
   return result ?? null;
 }
+
+/**
+ * Deletes incidents that are no longer present in the game.
+ * Keeps only incidents whose lsId is in the provided set of active IDs.
+ * Returns the deleted incidents for SSE broadcast.
+ */
+export async function deleteStaleIncidents(activeLsIds: string[]): Promise<Incident[]> {
+  if (activeLsIds.length === 0) {
+    // If no active incidents, delete all
+    const allIncidents = await db.select().from(incidents);
+    if (allIncidents.length > 0) {
+      await db.delete(incidents);
+    }
+    return allIncidents;
+  }
+
+  // Find incidents not in the active set
+  const staleIncidents = await db
+    .select()
+    .from(incidents)
+    .where(sql`${incidents.lsId} NOT IN (${sql.join(activeLsIds.map(id => sql`${id}`), sql`, `)})`);
+
+  if (staleIncidents.length > 0) {
+    // Delete stale incidents
+    await db
+      .delete(incidents)
+      .where(sql`${incidents.lsId} NOT IN (${sql.join(activeLsIds.map(id => sql`${id}`), sql`, `)})`);
+  }
+
+  return staleIncidents;
+}

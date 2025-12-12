@@ -75,6 +75,10 @@ export function useIncidents(filters: FilterState) {
           (a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime()
         );
       });
+    } else if (data.type === 'deleted' && data.deletedIds) {
+      // Remove deleted incidents from the list
+      const deletedSet = new Set(data.deletedIds);
+      setIncidents((prev) => prev.filter((i) => !deletedSet.has(i.lsId)));
     }
   }, []);
 

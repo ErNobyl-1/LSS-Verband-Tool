@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import apiRoutes from './routes/api.js';
 import { lssScraper } from './services/lss-scraper.js';
+import { runMigrations } from './db/migrate.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -38,6 +39,10 @@ app.get('/', (req, res) => {
       incidents: '/api/incidents',
       stream: '/api/stream',
       health: '/api/health',
+      allianceStats: '/api/alliance/stats',
+      allianceStatsHistory: '/api/alliance/stats/history',
+      members: '/api/members',
+      membersOnline: '/api/members/online',
     },
   });
 });
@@ -51,21 +56,33 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   });
 });
 
-// Start server
-app.listen(Number(PORT), HOST, () => {
-  console.log(`🚀 LSS Verband Tool API running at http://${HOST}:${PORT}`);
-  console.log(`📡 SSE stream available at http://${HOST}:${PORT}/api/stream`);
+// Start server with migrations
+async function startServer() {
+  try {
+    // Run database migrations before starting
+    await runMigrations();
 
-  // Start the LSS scraper if credentials are configured
-  if (process.env.LSS_EMAIL && process.env.LSS_PASSWORD) {
-    console.log(`🌐 Starting LSS scraper...`);
-    lssScraper.start().catch((err) => {
-      console.error('Failed to start LSS scraper:', err);
+    app.listen(Number(PORT), HOST, () => {
+      console.log(`🚀 LSS Verband Tool API running at http://${HOST}:${PORT}`);
+      console.log(`📡 SSE stream available at http://${HOST}:${PORT}/api/stream`);
+
+      // Start the LSS scraper if credentials are configured
+      if (process.env.LSS_EMAIL && process.env.LSS_PASSWORD) {
+        console.log(`🌐 Starting LSS scraper...`);
+        lssScraper.start().catch((err) => {
+          console.error('Failed to start LSS scraper:', err);
+        });
+      } else {
+        console.log(`ℹ️  LSS scraper not started (LSS_EMAIL/LSS_PASSWORD not configured)`);
+      }
     });
-  } else {
-    console.log(`ℹ️  LSS scraper not started (LSS_EMAIL/LSS_PASSWORD not configured)`);
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
   }
-});
+}
+
+startServer();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
