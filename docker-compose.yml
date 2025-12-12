@@ -34,6 +34,9 @@ services:
       LSS_MEMBER_TRACKING_INTERVAL_MS: ${LSS_MEMBER_TRACKING_INTERVAL_MS:-60000}
       LSS_HEADLESS: ${LSS_HEADLESS:-true}
       LSS_EXCLUDED_MEMBERS: ${LSS_EXCLUDED_MEMBERS:-}
+      # Authentication - Admin account credentials
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # Puppeteer/Chromium settings
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
     ports:

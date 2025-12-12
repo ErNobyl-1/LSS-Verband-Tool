@@ -7,7 +7,8 @@ Ein lokales Tool zur Extraktion und Visualisierung von Daten aus dem Browsergame
 - **Automatische Datenextraktion** via Headless Browser (Puppeteer)
 - **REST API** mit SSE-Support für Live-Updates
 - **Web Dashboard** mit Filterfunktionen und Kartenansicht
-- **Docker-basiert** für einfaches Setup
+- **Docker-basiert** fur einfaches Setup
+- **Benutzerverwaltung** - Registrierung mit Admin-Freischaltung
 
 ## Quickstart
 
@@ -19,9 +20,10 @@ cd LSS-Verband-Tool
 # 2. Environment-Datei erstellen und konfigurieren
 cp .env.example .env
 
-# 3. LSS Login-Daten in .env eintragen
+# 3. LSS Login-Daten und Admin-Passwort in .env eintragen
 # LSS_EMAIL=deine-email@example.com
 # LSS_PASSWORD=dein-passwort
+# ADMIN_PASSWORD=sicheres-admin-passwort
 
 # 4. Docker Container starten
 docker-compose up -d --build
@@ -30,6 +32,24 @@ docker-compose up -d --build
 # - Web UI: http://localhost:3000
 # - API: http://localhost:3001
 ```
+
+## Authentifizierung
+
+Das Tool verwendet ein Benutzer-System mit Admin-Freischaltung:
+
+1. **Admin-Account**: Wird beim Start automatisch erstellt/aktualisiert
+   - Username: aus `ADMIN_USERNAME` (default: "admin")
+   - Passwort: aus `ADMIN_PASSWORD`
+
+2. **Benutzer-Registrierung**:
+   - Verbandsmitglieder registrieren sich mit LSS-Name und Passwort
+   - Nach Registrierung ist der Account NICHT aktiv
+   - Admin muss den Account erst freischalten
+
+3. **Admin-Freischaltung** (unter `/admin`):
+   - Admin sieht wartende Benutzer
+   - Admin kann Benutzer einem Allianz-Mitglied zuordnen
+   - Admin kann einen Anzeigenamen setzen (z.B. echter Vorname)
 
 ## Konfiguration
 
@@ -41,6 +61,8 @@ Die Konfiguration erfolgt über die `.env` Datei:
 | `LSS_PASSWORD` | Leitstellenspiel Passwort | - |
 | `LSS_SCRAPE_INTERVAL_MS` | Intervall der Datenabfrage in ms | 10000 |
 | `LSS_HEADLESS` | Headless Browser Modus | true |
+| `ADMIN_USERNAME` | Admin-Benutzername | admin |
+| `ADMIN_PASSWORD` | Admin-Passwort (erforderlich!) | - |
 
 ## Projektstruktur
 

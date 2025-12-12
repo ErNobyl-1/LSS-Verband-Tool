@@ -62,6 +62,66 @@ function getParticipatingPlayers(incident: Incident): { driving: string[]; atMis
   return { driving, atMission };
 }
 
+// Generate a consistent color based on player name using a hash function
+function getPlayerColor(name: string): { bg: string; text: string; border: string } {
+  // Color palette with good contrast - tailwind color classes
+  const colors = [
+    { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-300' },
+    { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-300' },
+    { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-300' },
+    { bg: 'bg-pink-100', text: 'text-pink-800', border: 'border-pink-300' },
+    { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-300' },
+    { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-300' },
+    { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-300' },
+    { bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-300' },
+    { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-300' },
+    { bg: 'bg-cyan-100', text: 'text-cyan-800', border: 'border-cyan-300' },
+    { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' },
+    { bg: 'bg-violet-100', text: 'text-violet-800', border: 'border-violet-300' },
+  ];
+
+  // Simple hash function to get consistent index from name
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    const char = name.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
+}
+
+// Player badge component
+function PlayerBadge({ name, isDriving }: { name: string; isDriving?: boolean }) {
+  const color = getPlayerColor(name);
+
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${color.bg} ${color.text} ${color.border}`}
+    >
+      {isDriving && <span className="mr-1">🚗</span>}
+      {name}
+    </span>
+  );
+}
+
+// Player badges list component
+function PlayerBadges({ players, showDrivingIcon = true }: { players: { driving: string[]; atMission: string[] }; showDrivingIcon?: boolean }) {
+  const atMissionOnly = players.atMission.filter(p => !players.driving.includes(p));
+
+  return (
+    <div className="flex flex-wrap gap-1 justify-end">
+      {players.driving.map(name => (
+        <PlayerBadge key={`driving-${name}`} name={name} isDriving={showDrivingIcon} />
+      ))}
+      {atMissionOnly.map(name => (
+        <PlayerBadge key={`at-${name}`} name={name} />
+      ))}
+    </div>
+  );
+}
+
 // Calculate start time based on timeleft and lastSeenAt
 function calculateStartTime(incident: Incident): Date | null {
   const timeleft = getTimeleft(incident);
@@ -125,18 +185,12 @@ function useLiveCountdown(incident: Incident): { toStart: number | null; remaini
   return { toStart, remaining };
 }
 
-// Component for planned mission time display
+// Component for planned mission time display (timer only, no players)
 function PlannedMissionTimer({ incident }: { incident: Incident }) {
   const { toStart, remaining } = useLiveCountdown(incident);
   const progressPercent = getProgressPercent(incident);
   const startTime = calculateStartTime(incident);
   const endTime = calculateEndTime(incident);
-  const players = getParticipatingPlayers(incident);
-
-  // Combine all unique players
-  const allPlayers = players
-    ? [...new Set([...players.atMission, ...players.driving])]
-    : [];
 
   // Mission hasn't started yet - show countdown to start
   if (toStart !== null && toStart > 0) {
@@ -149,12 +203,6 @@ function PlannedMissionTimer({ incident }: { incident: Incident }) {
             {startTime && ` (${formatTime(startTime)})`}
           </span>
         </div>
-        {allPlayers.length > 0 && (
-          <div className="mt-1 text-gray-600">
-            <span>Spieler: </span>
-            <span>{allPlayers.join(', ')}</span>
-          </div>
-        )}
       </div>
     );
   }
@@ -185,12 +233,6 @@ function PlannedMissionTimer({ incident }: { incident: Incident }) {
             {endTime && ` (${formatTime(endTime)})`}
           </span>
         </div>
-        {allPlayers.length > 0 && (
-          <div className="mt-1 text-gray-600">
-            <span>Spieler: </span>
-            <span>{allPlayers.join(', ')}</span>
-          </div>
-        )}
       </div>
     );
   }
@@ -225,18 +267,23 @@ function PlannedMissionTimer({ incident }: { incident: Incident }) {
         <div className="w-full bg-gray-200 rounded-full h-1.5">
           <div className={`${barColor} h-1.5 rounded-full transition-all`} style={{ width: `${progressPercent}%` }} />
         </div>
-        {allPlayers.length > 0 && (
-          <div className="mt-1 text-gray-600">
-            <span>Spieler: </span>
-            <span>{allPlayers.join(', ')}</span>
-          </div>
-        )}
       </div>
     );
   }
 
   // No data available
   return null;
+}
+
+// Component for displaying participating players
+function MissionPlayers({ incident }: { incident: Incident }) {
+  const players = getParticipatingPlayers(incident);
+  if (!players) return null;
+
+  // Only show driving icon for planned missions, not for emergencies
+  const showDrivingIcon = incident.category === 'planned';
+
+  return <PlayerBadges players={players} showDrivingIcon={showDrivingIcon} />;
 }
 
 function getStatusColor(status: string | null) {
@@ -310,11 +357,16 @@ export function IncidentList({ incidents, loading, error }: IncidentListProps) {
                     </p>
                   )}
                 </div>
-                {avgCredits !== null && (
-                  <div className="text-sm font-medium text-gray-600 whitespace-nowrap">
-                    {formatCredits(avgCredits)}
-                  </div>
-                )}
+                <div className="flex flex-col items-end gap-1">
+                  {avgCredits !== null && (
+                    <div className="text-sm font-medium text-gray-600 whitespace-nowrap">
+                      {formatCredits(avgCredits)}
+                    </div>
+                  )}
+                  {(incident.category === 'planned' || incident.category === 'emergency') && (
+                    <MissionPlayers incident={incident} />
+                  )}
+                </div>
               </div>
 
               {/* Show timer for planned missions */}

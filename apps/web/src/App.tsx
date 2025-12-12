@@ -1,11 +1,21 @@
 import { useState, useMemo } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Header } from './components/Header';
 import { IncidentList } from './components/IncidentList';
 import { Map } from './components/Map';
+import { LoginPage } from './components/LoginPage';
+import { RegisterPage } from './components/RegisterPage';
+import { PendingPage } from './components/PendingPage';
+import { AdminPage } from './components/AdminPage';
 import { useIncidents } from './hooks/useIncidents';
+import { useAuth, User } from './hooks/useAuth';
 
-function ListPage() {
+interface PageProps {
+  user: User;
+  onLogout: () => void;
+}
+
+function ListPage({ user, onLogout }: PageProps) {
   const [showEmergency, setShowEmergency] = useState(true);
   const [showEvent, setShowEvent] = useState(true);
 
@@ -34,7 +44,7 @@ function ListPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
-      <Header connected={connected} stats={stats} />
+      <Header connected={connected} stats={stats} user={user} onLogout={onLogout} />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left column: Notfälle & GSL-Einsätze */}
@@ -85,7 +95,7 @@ function ListPage() {
   );
 }
 
-function MapPage() {
+function MapPage({ user, onLogout }: PageProps) {
   const { incidents, connected } = useIncidents();
 
   const stats = useMemo(() => {
@@ -98,7 +108,7 @@ function MapPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
-      <Header connected={connected} stats={stats} />
+      <Header connected={connected} stats={stats} user={user} onLogout={onLogout} />
 
       <div className="flex-1 overflow-hidden">
         <Map incidents={incidents} />
@@ -108,11 +118,61 @@ function MapPage() {
 }
 
 function App() {
+  const [showRegister, setShowRegister] = useState(false);
+  const { user, isAuthenticated, isPending, isLoading, error, login, register, logout, refreshUser } = useAuth();
+
+  // Show loading spinner while checking auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Lade...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show pending page if user is registered but not approved
+  if (isPending && user) {
+    return (
+      <PendingPage
+        lssName={user.lssName}
+        onLogout={logout}
+        onRefresh={refreshUser}
+      />
+    );
+  }
+
+  // Show login or register page if not authenticated
+  if (!isAuthenticated) {
+    if (showRegister) {
+      return (
+        <RegisterPage
+          onRegister={register}
+          onSwitchToLogin={() => setShowRegister(false)}
+        />
+      );
+    }
+    return (
+      <LoginPage
+        error={error}
+        onLogin={login}
+        onSwitchToRegister={() => setShowRegister(true)}
+      />
+    );
+  }
+
+  // Show main app if authenticated
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<ListPage />} />
-        <Route path="/map" element={<MapPage />} />
+        <Route path="/" element={<ListPage user={user!} onLogout={logout} />} />
+        <Route path="/map" element={<MapPage user={user!} onLogout={logout} />} />
+        {user?.isAdmin && (
+          <Route path="/admin" element={<AdminPage />} />
+        )}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

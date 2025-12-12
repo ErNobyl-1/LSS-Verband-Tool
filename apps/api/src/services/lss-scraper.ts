@@ -348,10 +348,11 @@ class LssScraper {
       // Extract missions
       const { missions, stats } = await this.extractMissions();
 
-      // Fetch details for planned missions (to get exact remaining time)
-      const plannedMissions = missions.filter(m => m.category === 'planned');
-      if (plannedMissions.length > 0) {
-        await this.fetchPlannedMissionDetails(plannedMissions);
+      // Fetch details for planned + emergency missions (sequentially to avoid server overload)
+      // The isRunning flag prevents overlapping scrape cycles if this takes longer than the interval
+      const missionsNeedingDetails = missions.filter(m => m.category === 'planned' || m.category === 'emergency');
+      if (missionsNeedingDetails.length > 0) {
+        await this.fetchMissionDetails(missionsNeedingDetails);
       }
 
       // Get list of active mission IDs from the DOM
@@ -392,11 +393,12 @@ class LssScraper {
     }
   }
 
-  // Fetch mission details for planned missions to get exact remaining time and participating players
-  private async fetchPlannedMissionDetails(missions: MissionData[]): Promise<void> {
+  // Fetch mission details to get exact remaining time and participating players
+  // Processes missions sequentially (queue-style) to avoid overwhelming the server
+  private async fetchMissionDetails(missions: MissionData[]): Promise<void> {
     if (!this.page || missions.length === 0) return;
 
-    console.log(`[LSS-Scraper] Fetching details for ${missions.length} planned missions...`);
+    console.log(`[LSS-Scraper] Fetching details for ${missions.length} missions...`);
 
     // Process missions sequentially to avoid issues with page navigation
     let detailsCount = 0;
@@ -483,7 +485,7 @@ class LssScraper {
     }
 
     if (detailsCount > 0) {
-      console.log(`[LSS-Scraper] Fetched details for ${detailsCount}/${missions.length} planned missions (${withTimeCount} with countdown)`);
+      console.log(`[LSS-Scraper] Fetched details for ${detailsCount}/${missions.length} missions (${withTimeCount} with countdown)`);
     }
   }
 

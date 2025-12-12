@@ -5,6 +5,19 @@ import { addClient, removeClient, getClientCount } from '../services/sse.js';
 import { getLatestAllianceStats, getLatestAllianceStatsWithChanges, getAllianceStatsHistory, getAggregatedStats } from '../services/alliance-stats.js';
 import { getAllMembers, getOnlineMembers, getMemberById, getMemberActivityHistory, getMemberCounts } from '../services/alliance-members.js';
 import { getAllMissionCredits, getMissionTypeCacheStats, refreshMissionTypes } from '../services/mission-types.js';
+import { requireAdmin, authMiddlewareAllowPending } from '../middleware/auth.js';
+import {
+  getUserByLssName,
+  createUser,
+  verifyPassword,
+  createSession,
+  deleteSession,
+  getAllUsers,
+  getPendingUsers,
+  activateUser,
+  deleteUser,
+  updateLastLogin,
+} from '../services/auth.js';
 
 const router = Router();
 
@@ -388,6 +401,313 @@ router.post('/mission-credits/refresh', async (req: Request, res: Response) => {
     return res.status(500).json({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// ============================================
+// AUTHENTICATION ENDPOINTS
+// ============================================
+
+// POST /api/auth/register - Register a new user
+router.post('/auth/register', async (req: Request, res: Response) => {
+  try {
+    const { lssName, password } = req.body;
+
+    if (!lssName || typeof lssName !== 'string' || lssName.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'LSS-Name muss mindestens 2 Zeichen lang sein',
+      });
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Passwort muss mindestens 6 Zeichen lang sein',
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await getUserByLssName(lssName.trim());
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: 'Conflict',
+        message: 'Ein Account mit diesem LSS-Namen existiert bereits',
+      });
+    }
+
+    // Create user (not active by default)
+    const user = await createUser(lssName.trim(), password);
+
+    // Create session so user can check their status
+    const token = await createSession(user.id);
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          lssName: user.lssName,
+          isActive: user.isActive,
+          isAdmin: user.isAdmin,
+        },
+        token,
+      },
+      message: 'Registrierung erfolgreich. Warte auf Freischaltung durch Admin.',
+    });
+  } catch (error) {
+    console.error('Error registering user:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Registrierung fehlgeschlagen',
+    });
+  }
+});
+
+// POST /api/auth/login - Login
+router.post('/auth/login', async (req: Request, res: Response) => {
+  try {
+    const { lssName, password } = req.body;
+
+    if (!lssName || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'LSS-Name und Passwort erforderlich',
+      });
+    }
+
+    // Find user
+    const user = await getUserByLssName(lssName);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Ungültiger LSS-Name oder Passwort',
+      });
+    }
+
+    // Verify password
+    const isValid = await verifyPassword(password, user.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Ungültiger LSS-Name oder Passwort',
+      });
+    }
+
+    // Create session
+    const token = await createSession(user.id);
+
+    // Update last login
+    await updateLastLogin(user.id);
+
+    return res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          lssName: user.lssName,
+          displayName: user.displayName,
+          allianceMemberId: user.allianceMemberId,
+          isActive: user.isActive,
+          isAdmin: user.isAdmin,
+        },
+        token,
+      },
+    });
+  } catch (error) {
+    console.error('Error logging in:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Login fehlgeschlagen',
+    });
+  }
+});
+
+// POST /api/auth/logout - Logout
+router.post('/auth/logout', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      await deleteSession(token);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Erfolgreich abgemeldet',
+    });
+  } catch (error) {
+    console.error('Error logging out:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Logout fehlgeschlagen',
+    });
+  }
+});
+
+// GET /api/auth/me - Get current user (allows pending users)
+router.get('/auth/me', authMiddlewareAllowPending, (req: Request, res: Response) => {
+  const user = req.user!;
+
+  return res.json({
+    success: true,
+    data: {
+      id: user.id,
+      lssName: user.lssName,
+      displayName: user.displayName,
+      allianceMemberId: user.allianceMemberId,
+      isActive: user.isActive,
+      isAdmin: user.isAdmin,
+      createdAt: user.createdAt,
+      lastLoginAt: user.lastLoginAt,
+    },
+  });
+});
+
+// ============================================
+// ADMIN ENDPOINTS (Require admin role)
+// ============================================
+
+// GET /api/admin/users - Get all users
+router.get('/admin/users', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const users = await getAllUsers();
+
+    return res.json({
+      success: true,
+      data: users,
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Fehler beim Laden der Benutzer',
+    });
+  }
+});
+
+// GET /api/admin/users/pending - Get pending users
+router.get('/admin/users/pending', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const users = await getPendingUsers();
+
+    return res.json({
+      success: true,
+      data: users,
+    });
+  } catch (error) {
+    console.error('Error fetching pending users:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Fehler beim Laden der wartenden Benutzer',
+    });
+  }
+});
+
+// PUT /api/admin/users/:id/activate - Activate a user
+router.put('/admin/users/:id/activate', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+
+    if (isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Ungültige User-ID',
+      });
+    }
+
+    const { allianceMemberId, displayName } = req.body;
+
+    const user = await activateUser(
+      id,
+      allianceMemberId || null,
+      displayName || null
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Benutzer nicht gefunden',
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        id: user.id,
+        lssName: user.lssName,
+        displayName: user.displayName,
+        allianceMemberId: user.allianceMemberId,
+        isActive: user.isActive,
+      },
+      message: 'Benutzer freigeschaltet',
+    });
+  } catch (error) {
+    console.error('Error activating user:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Fehler beim Freischalten des Benutzers',
+    });
+  }
+});
+
+// DELETE /api/admin/users/:id - Delete a user
+router.delete('/admin/users/:id', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+
+    if (isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Ungültige User-ID',
+      });
+    }
+
+    // Prevent deleting yourself
+    if (req.user?.id === id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Du kannst deinen eigenen Account nicht löschen',
+      });
+    }
+
+    const deleted = await deleteUser(id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Benutzer nicht gefunden',
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Benutzer gelöscht',
+    });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Fehler beim Löschen des Benutzers',
     });
   }
 });

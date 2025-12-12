@@ -1,4 +1,5 @@
 import { IncidentsResponse, SSEIncidentMessage, SSEAllianceStatsMessage, SSEMembersMessage, AllianceStatsResponse, AllianceStatsHistoryResponse, MembersResponse, MissionCreditsResponse } from './types';
+import { getAuthToken, getAuthHeaders } from './hooks/useAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -6,7 +7,9 @@ export async function fetchIncidents(): Promise<IncidentsResponse> {
   const params = new URLSearchParams();
   params.set('limit', '500');
 
-  const response = await fetch(`${API_URL}/api/incidents?${params.toString()}`);
+  const response = await fetch(`${API_URL}/api/incidents?${params.toString()}`, {
+    headers: getAuthHeaders(),
+  });
 
   if (!response.ok) {
     throw new Error(`API Error: ${response.status}`);
@@ -24,7 +27,12 @@ interface SSECallbacks {
 }
 
 export function createSSEConnection(callbacks: SSECallbacks): EventSource {
-  const eventSource = new EventSource(`${API_URL}/api/stream`);
+  // SSE doesn't support custom headers, so we pass token as query parameter
+  const token = getAuthToken();
+  const url = token
+    ? `${API_URL}/api/stream?token=${encodeURIComponent(token)}`
+    : `${API_URL}/api/stream`;
+  const eventSource = new EventSource(url);
 
   eventSource.addEventListener('connected', () => {
     console.log('[SSE] Connected to stream');
@@ -94,7 +102,9 @@ export function createSSEConnection(callbacks: SSECallbacks): EventSource {
 }
 
 export async function fetchAllianceStats(): Promise<AllianceStatsResponse> {
-  const response = await fetch(`${API_URL}/api/alliance/stats`);
+  const response = await fetch(`${API_URL}/api/alliance/stats`, {
+    headers: getAuthHeaders(),
+  });
 
   if (!response.ok) {
     throw new Error(`API Error: ${response.status}`);
@@ -112,7 +122,9 @@ export async function fetchAllianceStatsHistory(
     limit: limit.toString(),
   });
 
-  const response = await fetch(`${API_URL}/api/alliance/stats/history?${params.toString()}`);
+  const response = await fetch(`${API_URL}/api/alliance/stats/history?${params.toString()}`, {
+    headers: getAuthHeaders(),
+  });
 
   if (!response.ok) {
     throw new Error(`API Error: ${response.status}`);
@@ -123,7 +135,9 @@ export async function fetchAllianceStatsHistory(
 
 export async function fetchMembers(onlineOnly = false): Promise<MembersResponse> {
   const params = onlineOnly ? '?online_only=true' : '';
-  const response = await fetch(`${API_URL}/api/members${params}`);
+  const response = await fetch(`${API_URL}/api/members${params}`, {
+    headers: getAuthHeaders(),
+  });
 
   if (!response.ok) {
     throw new Error(`API Error: ${response.status}`);
@@ -133,7 +147,9 @@ export async function fetchMembers(onlineOnly = false): Promise<MembersResponse>
 }
 
 export async function fetchMissionCredits(): Promise<MissionCreditsResponse> {
-  const response = await fetch(`${API_URL}/api/mission-credits`);
+  const response = await fetch(`${API_URL}/api/mission-credits`, {
+    headers: getAuthHeaders(),
+  });
 
   if (!response.ok) {
     throw new Error(`API Error: ${response.status}`);

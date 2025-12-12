@@ -5,6 +5,8 @@ import apiRoutes from './routes/api.js';
 import { lssScraper } from './services/lss-scraper.js';
 import { runMigrations } from './db/migrate.js';
 import { initializeMissionTypes } from './services/mission-types.js';
+import { authMiddleware } from './middleware/auth.js';
+import { ensureAdminExists } from './services/auth.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -13,8 +15,8 @@ const HOST = process.env.API_HOST || '0.0.0.0';
 // Middleware
 app.use(cors({
   origin: '*',
-  methods: ['GET', 'OPTIONS'],
-  allowedHeaders: ['Content-Type'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json());
 
@@ -28,7 +30,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// Routes (read-only API for frontend)
+// Authentication middleware (checks token for all /api routes except health)
+app.use('/api', authMiddleware);
+
+// Routes
 app.use('/api', apiRoutes);
 
 // Root endpoint
@@ -63,6 +68,9 @@ async function startServer() {
   try {
     // Run database migrations before starting
     await runMigrations();
+
+    // Ensure admin account exists
+    await ensureAdminExists();
 
     // Initialize mission types cache
     await initializeMissionTypes();

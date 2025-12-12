@@ -97,3 +97,38 @@ export const missionTypes = pgTable('mission_types', {
 
 export type MissionType = typeof missionTypes.$inferSelect;
 export type NewMissionType = typeof missionTypes.$inferInsert;
+
+// Users for authentication
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  lssName: varchar('lss_name', { length: 255 }).notNull().unique(), // LSS Spielername (Login)
+  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  displayName: varchar('display_name', { length: 255 }), // Echter Name / Anzeigename
+  allianceMemberId: integer('alliance_member_id'), // References alliance_members(id)
+  isActive: boolean('is_active').default(false).notNull(), // Freischaltung durch Admin
+  isAdmin: boolean('is_admin').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  lastLoginAt: timestamp('last_login_at'),
+}, (table) => ({
+  lssNameIdx: uniqueIndex('users_lss_name_idx').on(table.lssName),
+  isActiveIdx: index('users_is_active_idx').on(table.isActive),
+}));
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+
+// Sessions for authentication
+export const sessions = pgTable('sessions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull(), // References users(id)
+  token: varchar('token', { length: 64 }).notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tokenIdx: uniqueIndex('sessions_token_idx').on(table.token),
+  userIdIdx: index('sessions_user_id_idx').on(table.userId),
+  expiresAtIdx: index('sessions_expires_at_idx').on(table.expiresAt),
+}));
+
+export type Session = typeof sessions.$inferSelect;
+export type NewSession = typeof sessions.$inferInsert;

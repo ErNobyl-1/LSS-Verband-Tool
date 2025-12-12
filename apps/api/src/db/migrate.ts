@@ -132,6 +132,45 @@ export async function runMigrations(existingPool?: pg.Pool): Promise<void> {
   // Mission types index
   await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS mission_types_mission_type_id_idx ON mission_types(mission_type_id)`);
 
+  // ============================================
+  // USERS TABLE (for authentication)
+  // ============================================
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      lss_name VARCHAR(255) NOT NULL UNIQUE,
+      password_hash VARCHAR(255) NOT NULL,
+      display_name VARCHAR(255),
+      alliance_member_id INTEGER,
+      is_active BOOLEAN DEFAULT FALSE NOT NULL,
+      is_admin BOOLEAN DEFAULT FALSE NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+      last_login_at TIMESTAMP
+    )
+  `);
+
+  // Users indexes
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS users_lss_name_idx ON users(lss_name)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS users_is_active_idx ON users(is_active)`);
+
+  // ============================================
+  // SESSIONS TABLE (for authentication)
+  // ============================================
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      token VARCHAR(64) NOT NULL UNIQUE,
+      expires_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW() NOT NULL
+    )
+  `);
+
+  // Sessions indexes
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_idx ON sessions(token)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at)`);
+
   console.log('[DB] Database migrations completed successfully!');
 
   // Only close pool if we created it
