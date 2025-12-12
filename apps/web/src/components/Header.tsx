@@ -116,7 +116,7 @@ export function Header({ connected, stats }: HeaderProps) {
                   className="fixed inset-0 z-10"
                   onClick={() => setShowDropdown(false)}
                 />
-                <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border z-20 max-h-96 overflow-auto">
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border z-20 max-h-80 overflow-auto scrollbar-thin">
                   {/* Online Members Section */}
                   <div className="p-2 border-b bg-gray-50">
                     <span className="text-xs font-medium text-gray-500 uppercase">
