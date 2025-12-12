@@ -10,4 +10,7 @@ const pool = new Pool({
 
 export const db = drizzle(pool, { schema });
 
+// Export pool for raw SQL queries
+export { pool };
+
 export * from './schema.js';

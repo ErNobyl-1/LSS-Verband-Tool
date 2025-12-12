@@ -2,9 +2,11 @@ import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Incident } from '../types';
+import { User } from '../hooks/useAuth';
 
 interface MapProps {
   incidents: Incident[];
+  user?: User | null;
 }
 
 function getMarkerColor(status: string | null): string {
@@ -20,29 +22,47 @@ function getMarkerColor(status: string | null): string {
   }
 }
 
-function createRoundMarker(color: string): HTMLElement {
+// Check if user has vehicles at this incident
+function userHasVehiclesAtIncident(incident: Incident, userName: string | undefined): boolean {
+  if (!userName) return false;
+  const rawJson = incident.rawJson as Record<string, unknown> | null;
+  if (!rawJson) return false;
+
+  const driving = Array.isArray(rawJson.players_driving) ? rawJson.players_driving as string[] : [];
+  const atMission = Array.isArray(rawJson.players_at_mission) ? rawJson.players_at_mission as string[] : [];
+
+  return driving.includes(userName) || atMission.includes(userName);
+}
+
+function createRoundMarker(color: string, hasOwnVehicles: boolean): HTMLElement {
   const el = document.createElement('div');
   el.className = 'incident-marker incident-marker-round';
   el.style.width = '20px';
   el.style.height = '20px';
   el.style.borderRadius = '50%';
-  el.style.border = '3px solid white';
-  el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+  el.style.border = hasOwnVehicles ? '3px solid #22c55e' : '3px solid white';
+  el.style.boxShadow = hasOwnVehicles ? '0 2px 6px rgba(34,197,94,0.5)' : '0 2px 4px rgba(0,0,0,0.3)';
   el.style.cursor = 'pointer';
   el.style.backgroundColor = color;
   return el;
 }
 
-function createPinMarker(color: string): HTMLElement {
+function createPinMarker(color: string, hasOwnVehicles: boolean): HTMLElement {
   const el = document.createElement('div');
   el.className = 'incident-marker incident-marker-pin';
   el.style.cursor = 'pointer';
 
+  const strokeColor = hasOwnVehicles ? '#22c55e' : 'white';
+  const strokeWidth = hasOwnVehicles ? '3' : '2';
+  const shadowStyle = hasOwnVehicles
+    ? 'filter: drop-shadow(0 2px 4px rgba(34,197,94,0.5));'
+    : 'filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));';
+
   // SVG pin marker - tip points to exact coordinates
   el.innerHTML = `
-    <svg width="24" height="36" viewBox="0 0 24 36" style="filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));">
+    <svg width="24" height="36" viewBox="0 0 24 36" style="${shadowStyle}">
       <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z"
-            fill="${color}" stroke="white" stroke-width="2"/>
+            fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}"/>
       <circle cx="12" cy="12" r="5" fill="white"/>
     </svg>
   `;
@@ -54,12 +74,12 @@ function cleanTitle(title: string) {
   return title.replace(/\s*\[Verband\]\s*/g, '').trim();
 }
 
-export function Map({ incidents }: MapProps) {
+export function Map({ incidents, user }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<globalThis.Map<number, maplibregl.Marker>>(new globalThis.Map());
   // Track marker metadata for live updates
-  const markerDataRef = useRef<globalThis.Map<number, { status: string | null; category: string }>>(new globalThis.Map());
+  const markerDataRef = useRef<globalThis.Map<number, { status: string | null; category: string; hasOwnVehicles: boolean }>>(new globalThis.Map());
 
   // Initialize map
   useEffect(() => {
@@ -105,6 +125,7 @@ export function Map({ incidents }: MapProps) {
     const incidentIds = new Set(incidents.map((i) => i.id));
 
     const markerData = markerDataRef.current;
+    const userName = user?.allianceMemberId ? user.lssName : undefined;
 
     // Remove markers for incidents that no longer exist
     currentMarkers.forEach((marker, id) => {
@@ -120,14 +141,16 @@ export function Map({ incidents }: MapProps) {
       if (!incident.lat || !incident.lon) return;
 
       let marker = currentMarkers.get(incident.id);
+      const hasOwnVehicles = userHasVehiclesAtIncident(incident, userName);
 
       const existingData = markerData.get(incident.id);
       const needsRecreate = marker && existingData && (
         existingData.status !== incident.status ||
-        existingData.category !== incident.category
+        existingData.category !== incident.category ||
+        existingData.hasOwnVehicles !== hasOwnVehicles
       );
 
-      // Remove old marker if status/category changed
+      // Remove old marker if status/category/ownership changed
       if (needsRecreate && marker) {
         marker.remove();
         currentMarkers.delete(incident.id);
@@ -138,7 +161,7 @@ export function Map({ incidents }: MapProps) {
         // Create new marker based on category and status
         const color = getMarkerColor(incident.status);
         const isPlanned = incident.category === 'planned';
-        const el = isPlanned ? createRoundMarker(color) : createPinMarker(color);
+        const el = isPlanned ? createRoundMarker(color, hasOwnVehicles) : createPinMarker(color, hasOwnVehicles);
 
         // Pin markers need anchor at bottom tip; round markers centered
         const anchor = isPlanned ? 'center' : 'bottom';
@@ -162,13 +185,13 @@ export function Map({ incidents }: MapProps) {
 
         marker.setPopup(popup);
         currentMarkers.set(incident.id, marker);
-        markerData.set(incident.id, { status: incident.status, category: incident.category });
+        markerData.set(incident.id, { status: incident.status, category: incident.category, hasOwnVehicles });
       } else {
         // Update existing marker position only
         marker.setLngLat([incident.lon, incident.lat]);
       }
     });
-  }, [incidents]);
+  }, [incidents, user]);
 
   return (
     <div ref={mapContainer} className="w-full h-full" />

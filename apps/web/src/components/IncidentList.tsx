@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { Incident } from '../types';
 import { useMissionCredits } from '../hooks/useMissionCredits';
 import { usePlayerNames } from '../hooks/usePlayerNames';
+import { User } from '../hooks/useAuth';
 
 interface IncidentListProps {
   incidents: Incident[];
   loading: boolean;
   error: string | null;
+  user?: User | null;
 }
 
 // Parse timeleft from rawJson (MILLISECONDS until mission STARTS)
@@ -343,9 +345,22 @@ function cleanTitle(title: string) {
   return title.replace(/\s*\[Verband\]\s*/g, '').trim();
 }
 
-export function IncidentList({ incidents, loading, error }: IncidentListProps) {
+// Check if user has vehicles at this incident
+function userHasVehiclesAtIncident(incident: Incident, userName: string | undefined): boolean {
+  if (!userName) return false;
+  const rawJson = incident.rawJson as Record<string, unknown> | null;
+  if (!rawJson) return false;
+
+  const driving = Array.isArray(rawJson.players_driving) ? rawJson.players_driving as string[] : [];
+  const atMission = Array.isArray(rawJson.players_at_mission) ? rawJson.players_at_mission as string[] : [];
+
+  return driving.includes(userName) || atMission.includes(userName);
+}
+
+export function IncidentList({ incidents, loading, error, user }: IncidentListProps) {
   const { getCredits } = useMissionCredits();
   const { getDisplayName } = usePlayerNames();
+  const userName = user?.allianceMemberId ? user.lssName : undefined;
 
   if (loading && incidents.length === 0) {
     return (
@@ -376,11 +391,16 @@ export function IncidentList({ incidents, loading, error }: IncidentListProps) {
       {incidents.map((incident) => {
         const statusColor = getStatusColor(incident.status);
         const avgCredits = getCredits(incident.type);
+        const hasOwnVehicles = userHasVehiclesAtIncident(incident, userName);
 
         return (
           <div
             key={incident.id}
-            className="flex bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all overflow-hidden"
+            className={`flex rounded-lg border shadow-sm hover:shadow-md transition-all overflow-hidden ${
+              hasOwnVehicles
+                ? 'bg-green-50 border-green-300 hover:border-green-400'
+                : 'bg-white border-gray-200 hover:border-gray-300'
+            }`}
           >
             {/* Status indicator stripe */}
             <div className={`w-2 flex-shrink-0 ${statusColor}`} />

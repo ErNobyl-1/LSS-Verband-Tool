@@ -76,6 +76,7 @@ function ListPage({ user, onLogout }: PageProps) {
             incidents={emergencyAndEvent}
             loading={loading}
             error={error}
+            user={user}
           />
         </div>
 
@@ -88,6 +89,7 @@ function ListPage({ user, onLogout }: PageProps) {
             incidents={planned}
             loading={loading}
             error={error}
+            user={user}
           />
         </div>
       </div>
@@ -111,7 +113,7 @@ function MapPage({ user, onLogout }: PageProps) {
       <Header connected={connected} stats={stats} user={user} onLogout={onLogout} />
 
       <div className="flex-1 overflow-hidden">
-        <Map incidents={incidents} />
+        <Map incidents={incidents} user={user} />
       </div>
     </div>
   );

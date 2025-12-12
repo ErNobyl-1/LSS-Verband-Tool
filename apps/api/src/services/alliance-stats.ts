@@ -1,4 +1,4 @@
-import { db } from '../db/index.js';
+import { db, pool } from '../db/index.js';
 import { allianceStats, type NewAllianceStat } from '../db/schema.js';
 import { desc, eq, and, gte, lte } from 'drizzle-orm';
 
@@ -214,29 +214,56 @@ export async function getAllianceStatsHistory(
 }
 
 // Get aggregated stats for charts (hourly, daily, etc.)
+// Uses PostgreSQL date_trunc to aggregate data points per period
 export async function getAggregatedStats(
   allianceId: number,
   period: 'hour' | 'day' | 'week' | 'month' = 'day',
   limit = 30
 ) {
-  // For now, return raw data - can add SQL aggregation later
+  // Calculate the time range based on period and limit
   const now = new Date();
-  let from: Date;
+  let fromDate: Date;
 
   switch (period) {
     case 'hour':
-      from = new Date(now.getTime() - limit * 60 * 60 * 1000);
+      fromDate = new Date(now.getTime() - limit * 60 * 60 * 1000);
       break;
     case 'day':
-      from = new Date(now.getTime() - limit * 24 * 60 * 60 * 1000);
+      fromDate = new Date(now.getTime() - limit * 24 * 60 * 60 * 1000);
       break;
     case 'week':
-      from = new Date(now.getTime() - limit * 7 * 24 * 60 * 60 * 1000);
+      fromDate = new Date(now.getTime() - limit * 7 * 24 * 60 * 60 * 1000);
       break;
     case 'month':
-      from = new Date(now.getTime() - limit * 30 * 24 * 60 * 60 * 1000);
+      fromDate = new Date(now.getTime() - limit * 30 * 24 * 60 * 60 * 1000);
       break;
   }
 
-  return await getAllianceStatsHistory(allianceId, { from });
+  // Use DISTINCT ON with date_trunc to get one data point per period
+  // We take the last (most recent) entry within each truncated period
+  const query = `
+    SELECT DISTINCT ON (date_trunc($1, recorded_at))
+      id,
+      alliance_id as "allianceId",
+      alliance_name as "allianceName",
+      credits_total as "creditsTotal",
+      rank,
+      user_count as "userCount",
+      user_online_count as "userOnlineCount",
+      recorded_at as "recordedAt"
+    FROM alliance_stats
+    WHERE alliance_id = $2
+      AND recorded_at >= $3
+    ORDER BY date_trunc($1, recorded_at) DESC, recorded_at DESC
+    LIMIT $4
+  `;
+
+  const result = await pool.query(query, [period, allianceId, fromDate, limit]);
+
+  // Convert BigInt creditsTotal to Number and ensure proper date formatting
+  return result.rows.map(row => ({
+    ...row,
+    creditsTotal: Number(row.creditsTotal),
+    recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+  }));
 }
