@@ -279,7 +279,7 @@ router.get('/alliance/stats/full', async (req: Request, res: Response) => {
 // GET /api/alliance/stats/history - Get alliance stats history
 router.get('/alliance/stats/history', async (req: Request, res: Response) => {
   try {
-    const { alliance_id, period, limit, from, to } = req.query;
+    const { alliance_id, period, limit, from, to, debug } = req.query;
 
     // If no alliance_id provided, try to get from latest stats
     let allianceId: number;
@@ -319,6 +319,23 @@ router.get('/alliance/stats/history', async (req: Request, res: Response) => {
         period as 'hour' | 'day' | 'week' | 'month',
         limitNum
       );
+
+      // If debug mode, also fetch raw data for comparison
+      if (debug === 'true') {
+        const rawHistory = await getAllianceStatsHistory(allianceId, { limit: 200 });
+        return res.json({
+          success: true,
+          data: history,
+          meta: {
+            allianceId,
+            period,
+            aggregatedCount: history.length,
+            rawCount: rawHistory.length,
+            serverTime: new Date().toISOString(),
+            rawTimestamps: rawHistory.slice(0, 50).map(r => r.recordedAt),
+          },
+        });
+      }
 
       return res.json({
         success: true,
