@@ -452,38 +452,17 @@ if [ "$EDIT_ENV" = "j" ] || [ "$EDIT_ENV" = "J" ]; then
 fi
 
 # =============================================================================
-# nginx konfigurieren
+# nginx konfigurieren (HTTP mit Proxy-Locations)
 # =============================================================================
 log_info "Konfiguriere nginx..."
 
 cat > /etc/nginx/sites-available/lss-verband-tool << EOF
-# HTTP -> HTTPS Redirect
 server {
     listen 80;
     listen [::]:80;
     server_name ${DOMAIN};
 
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
-
-    location / {
-        return 301 https://\$server_name\$request_uri;
-    }
-}
-
-# HTTPS Server
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name ${DOMAIN};
-
-    # SSL wird von Certbot konfiguriert
-    # ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-    # ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
-
     # Security Headers
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header X-XSS-Protection "1; mode=block" always;
@@ -542,27 +521,40 @@ case $OS in
         rm -f /etc/nginx/sites-enabled/default
         ;;
     rocky|centos|rhel|almalinux)
-        # Rocky verwendet /etc/nginx/conf.d/
-        mv /etc/nginx/sites-available/lss-verband-tool /etc/nginx/conf.d/lss-verband-tool.conf
-        rm -rf /etc/nginx/sites-available
+        cp /etc/nginx/sites-available/lss-verband-tool /etc/nginx/conf.d/lss-verband-tool.conf
         ;;
 esac
 
-# nginx testen
+# nginx testen und starten
 nginx -t
-log_success "nginx konfiguriert"
+systemctl start nginx
+log_success "nginx gestartet"
 
 # =============================================================================
-# SSL-Zertifikat holen
+# SSL-Zertifikat holen (Certbot konfiguriert nginx automatisch um)
 # =============================================================================
 log_info "Hole SSL-Zertifikat..."
-
-# Temporär HTTP starten für Certbot
-systemctl start nginx
 
 certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --redirect
 
 log_success "SSL-Zertifikat installiert"
+
+# HSTS Header hinzufügen (Certbot macht das nicht automatisch)
+log_info "Füge HSTS Header hinzu..."
+case $OS in
+    debian|ubuntu)
+        NGINX_CONF="/etc/nginx/sites-available/lss-verband-tool"
+        ;;
+    rocky|centos|rhel|almalinux)
+        NGINX_CONF="/etc/nginx/conf.d/lss-verband-tool.conf"
+        ;;
+esac
+
+# HSTS in den SSL-Block einfügen (nach ssl_dhparam Zeile)
+sed -i '/ssl_dhparam/a\    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;' "$NGINX_CONF"
+
+nginx -t && systemctl reload nginx
+log_success "nginx konfiguriert (HTTPS aktiv)"
 
 # Certbot Auto-Renewal Timer prüfen/aktivieren
 log_info "Prüfe Certbot Auto-Renewal..."
