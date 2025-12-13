@@ -503,18 +503,6 @@ server {
         proxy_read_timeout 86400s;
     }
 
-    # Uptime Kuma Status Page
-    location /status/ {
-        proxy_pass http://127.0.0.1:3002/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-    }
 }
 EOF
 
@@ -730,10 +718,6 @@ echo "  URL:            https://${DOMAIN}"
 echo "  Admin-User:     admin"
 echo "  Admin-Passwort: ${ADMIN_PW}"
 echo ""
-echo -e "${BLUE}═══ STATUS-MONITORING ═══${NC}"
-echo "  Uptime Kuma:    https://${DOMAIN}/status/"
-echo "  (Beim ersten Aufruf: Admin-Account erstellen)"
-echo ""
 echo -e "${BLUE}═══ SERVER-ZUGANG ═══${NC}"
 echo "  Option 1:       ssh root@${DOMAIN} (dein bestehendes Passwort)"
 echo "  Option 2:       ssh ${DEPLOY_USER}@${DOMAIN}"
@@ -789,10 +773,6 @@ Web-Admin:
   URL:      https://${DOMAIN}
   User:     admin
   Passwort: ${ADMIN_PW}
-
-Uptime Kuma (Status-Monitoring):
-  URL:      https://${DOMAIN}/status/
-  (Erstelle beim ersten Aufruf einen Admin-Account)
 
 SSH-Zugang:
   Host:     ${DOMAIN}

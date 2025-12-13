@@ -17,21 +17,21 @@ Das LSS Verband Tool ist ein selbst gehostetes System zur Echtzeit-Übersicht vo
 │  ┌─────────────────────────────────────────────────────────────────────────────────┐ │
 │  │                            nginx (Reverse Proxy)                                 │ │
 │  │  - SSL/TLS Termination (Let's Encrypt)                                          │ │
-│  │  - Routes: / → web:3000, /api → api:3001, /status → uptime-kuma:3001           │ │
+│  │  - Routes: / → web:3000, /api → api:3001                                       │ │
 │  │  - Security Headers (HSTS, X-Frame-Options, etc.)                               │ │
 │  └───────────────────────────────────┬─────────────────────────────────────────────┘ │
 │                                      │                                               │
 │      ┌───────────────────────────────┼───────────────────────────────┐               │
-│      │                               │                               │               │
-│      ▼                               ▼                               ▼               │
-│  ┌─────────────┐            ┌─────────────────┐            ┌─────────────────┐      │
-│  │  Web (3000) │            │   API (3001)    │            │ Uptime Kuma     │      │
-│  │             │            │                 │            │ (3001 intern)   │      │
-│  │  React      │◀──────────▶│  Express.js     │            │                 │      │
-│  │  Vite       │   HTTP/    │  Puppeteer      │            │  Monitoring     │      │
-│  │  TailwindCSS│   SSE      │  Drizzle ORM    │            │  Alerting       │      │
-│  │  MapLibre   │            │  Pino Logger    │            │                 │      │
-│  └─────────────┘            └────────┬────────┘            └─────────────────┘      │
+│      │                               │                                               │
+│      ▼                               ▼                                               │
+│  ┌─────────────┐            ┌─────────────────┐                                      │
+│  │  Web (3000) │            │   API (3001)    │                                      │
+│  │             │            │                 │                                      │
+│  │  React      │◀──────────▶│  Express.js     │                                      │
+│  │  Vite       │   HTTP/    │  Puppeteer      │                                      │
+│  │  TailwindCSS│   SSE      │  Drizzle ORM    │                                      │
+│  │  MapLibre   │            │  Pino Logger    │                                      │
+│  └─────────────┘            └────────┬────────┘                                      │
 │                                      │                                               │
 │                                      │ SQL                                           │
 │                                      ▼                                               │
@@ -156,17 +156,6 @@ Das LSS Verband Tool ist ein selbst gehostetes System zur Echtzeit-Übersicht vo
 - Volume für Datenpersistenz
 - Automatische Backups (via setup.sh)
 
-### 5. Uptime Kuma (Optional)
-
-**Technologie:** Uptime Kuma
-
-**Funktion:** Status-Monitoring und Alerting
-
-**Features:**
-- Health-Check für API
-- Status-Page unter `/status/`
-- Benachrichtigungen (Discord, Telegram, etc.)
-
 ---
 
 ## Datenfluss
@@ -259,7 +248,6 @@ Das LSS Verband Tool ist ein selbst gehostetes System zur Echtzeit-Übersicht vo
 
 ### Netzwerk
 - PostgreSQL nur intern erreichbar (kein Port-Mapping)
-- Uptime Kuma nur über Reverse Proxy
 - Firewall: nur 22, 80, 443 offen
 
 ---

@@ -70,7 +70,6 @@ Das Script richtet automatisch ein:
 - System-Hardening (Firewall, fail2ban, SSH-Härtung)
 - Docker + Docker Compose
 - nginx als Reverse Proxy mit Let's Encrypt SSL
-- Uptime Kuma für Status-Monitoring (`/status/`)
 - Automatische Sicherheitsupdates
 - Tägliche Datenbank-Backups (3:00 Uhr)
 
@@ -171,10 +170,6 @@ Das Tool verwendet ein eigenes Authentifizierungssystem:
 │  │  - Statistiken (Chart.js)                                 │   │
 │  │  - Live-Updates via SSE                                   │   │
 │  └───────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│  ┌───────────────────────────────────────────────────────────┐   │
-│  │              Uptime Kuma (Status-Monitoring)              │   │
-│  └───────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -207,7 +202,6 @@ Detaillierte Dokumentation findest du im `/docs` Ordner:
 - **Container**: Docker + Docker Compose
 - **Reverse Proxy**: nginx
 - **SSL**: Let's Encrypt (Certbot)
-- **Monitoring**: Uptime Kuma
 
 ## Sicherheit
 
