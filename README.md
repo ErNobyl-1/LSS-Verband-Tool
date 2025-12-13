@@ -24,7 +24,7 @@ Das Tool extrahiert automatisch Verbandseinsätze aus dem Leitstellenspiel und s
 
 ```bash
 # 1. Repository klonen
-git clone https://github.com/ernobyl/LSS-Verband-Tool.git
+git clone https://github.com/ErNobyl-1/LSS-Verband-Tool.git
 cd LSS-Verband-Tool
 
 # 2. Konfiguration erstellen
@@ -59,7 +59,7 @@ Für den Betrieb auf einem öffentlichen Server steht ein automatisches Setup-Sc
 ssh root@<server-ip>
 
 # 2. Setup-Script herunterladen und ausführen
-curl -O https://raw.githubusercontent.com/ernobyl/LSS-Verband-Tool/main/setup.sh
+curl -O https://raw.githubusercontent.com/ErNobyl-1/LSS-Verband-Tool/main/setup.sh
 chmod +x setup.sh
 ./setup.sh
 ```
