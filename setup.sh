@@ -84,7 +84,7 @@ if [[ ! "$INSTALL_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]]; then
 fi
 
 # Git Repository (public)
-GIT_REPO="https://github.com/ernobyl/LSS-Verband-Tool.git"
+GIT_REPO="https://github.com/ErNobyl-1/LSS-Verband-Tool.git"
 
 echo ""
 log_info "Konfiguration:"
