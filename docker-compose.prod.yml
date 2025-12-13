@@ -1,0 +1,109 @@
+# Production docker-compose - uses pre-built images from GHCR
+# For local development, use docker-compose.yml instead
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lss-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lss}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-lss_tool}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lss} -d ${POSTGRES_DB:-lss_tool}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lss-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    image: ghcr.io/ernobyl-1/lss-verband-tool-api:latest
+    container_name: lss-api
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lss}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lss_tool}
+      API_PORT: ${API_PORT:-3001}
+      API_HOST: ${API_HOST:-0.0.0.0}
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # LSS Scraper credentials
+      LSS_EMAIL: ${LSS_EMAIL:-}
+      LSS_PASSWORD: ${LSS_PASSWORD:-}
+      LSS_SCRAPE_INTERVAL_MS: ${LSS_SCRAPE_INTERVAL_MS:-10000}
+      LSS_ALLIANCE_STATS_INTERVAL_MS: ${LSS_ALLIANCE_STATS_INTERVAL_MS:-300000}
+      LSS_MEMBER_TRACKING_INTERVAL_MS: ${LSS_MEMBER_TRACKING_INTERVAL_MS:-60000}
+      LSS_HEADLESS: ${LSS_HEADLESS:-true}
+      LSS_EXCLUDED_MEMBERS: ${LSS_EXCLUDED_MEMBERS:-}
+      # Authentication - Admin account credentials
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Puppeteer/Chromium settings
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      # CORS - set to your domain in .env (e.g., https://verband.example.de)
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN must be set in .env}
+    ports:
+      - "127.0.0.1:${API_PORT:-3001}:${API_PORT:-3001}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - lss-network
+    restart: unless-stopped
+    # Required for Chromium in Docker
+    security_opt:
+      - seccomp:unconfined
+    shm_size: '2gb'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  web:
+    image: ghcr.io/ernobyl-1/lss-verband-tool-web:latest
+    container_name: lss-web
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+    networks:
+      - lss-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Uptime Kuma - Status Monitoring
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: lss-uptime-kuma
+    volumes:
+      - uptime_kuma_data:/app/data
+    ports:
+      - "127.0.0.1:3002:3001"
+    networks:
+      - lss-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+  uptime_kuma_data:
+
+networks:
+  lss-network:
+    driver: bridge

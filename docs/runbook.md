@@ -10,10 +10,12 @@ Betriebshandbuch für Administratoren.
 - Git
 
 ### Für Server-Deployment
-- VPS/Root-Server mit min. 2GB RAM
+- VPS/Root-Server mit min. 512MB RAM (2GB empfohlen)
 - Debian 12/13 oder Rocky Linux 9
 - Domain mit A-Record auf Server-IP
 - Root-Zugang
+
+> **Hinweis:** Das Setup verwendet fertige Docker-Images von GitHub Container Registry. Es wird nichts auf dem Server gebaut.
 
 ---
 
@@ -23,7 +25,7 @@ Betriebshandbuch für Administratoren.
 
 ```bash
 # 1. Repository klonen
-git clone https://github.com/ernobyl/LSS-Verband-Tool.git
+git clone https://github.com/ErNobyl-1/LSS-Verband-Tool.git
 cd LSS-Verband-Tool
 
 # 2. Konfiguration erstellen
@@ -48,7 +50,7 @@ docker-compose logs -f
 
 ```bash
 # Als root auf dem Server:
-curl -O https://raw.githubusercontent.com/ernobyl/LSS-Verband-Tool/main/setup.sh
+curl -O https://raw.githubusercontent.com/ErNobyl-1/LSS-Verband-Tool/main/setup.sh
 chmod +x setup.sh
 ./setup.sh
 ```
@@ -143,14 +145,16 @@ docker compose down -v
 
 ### Updates
 
+**Server (Produktion):**
 ```bash
-# Code aktualisieren
+cd /opt/lss-verband-tool
+./update.sh
+```
+
+**Lokal (Entwicklung):**
+```bash
 git pull
-
-# Container neu bauen und starten
 docker compose up -d --build
-
-# Logs prüfen
 docker compose logs -f api
 ```
 
