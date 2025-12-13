@@ -52,8 +52,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./apps/api/src:/app/src
     networks:
       - lss-network
     restart: unless-stopped
@@ -71,16 +69,13 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
     container_name: lss-web
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
     ports:
       - "3000:3000"
     depends_on:
       - api
-    volumes:
-      - ./apps/web/src:/app/src
-      - ./apps/web/index.html:/app/index.html
     networks:
       - lss-network
     restart: unless-stopped
