@@ -242,31 +242,87 @@ export async function getAggregatedStats(
       break;
   }
 
-  // Use DISTINCT ON with date_trunc to get one data point per period
-  // We take the last (most recent) entry within each truncated period
-  const query = `
-    SELECT DISTINCT ON (date_trunc($1, recorded_at))
-      id,
-      alliance_id as "allianceId",
-      alliance_name as "allianceName",
-      credits_total as "creditsTotal",
-      rank,
-      user_count as "userCount",
-      user_online_count as "userOnlineCount",
-      recorded_at as "recordedAt"
+  // First, count total records in time range for debugging
+  const countQuery = `
+    SELECT COUNT(*) as total,
+           MIN(recorded_at) as oldest,
+           MAX(recorded_at) as newest
     FROM alliance_stats
-    WHERE alliance_id = $2
-      AND recorded_at >= $3
-    ORDER BY date_trunc($1, recorded_at) DESC, recorded_at DESC
+    WHERE alliance_id = $1
+      AND recorded_at >= $2
+  `;
+  const countResult = await pool.query(countQuery, [allianceId, fromDate]);
+  const { total, oldest, newest } = countResult.rows[0];
+
+  logger.info({
+    period,
+    limit,
+    allianceId,
+    fromDate: fromDate.toISOString(),
+    now: now.toISOString(),
+    totalRecordsInRange: parseInt(total, 10),
+    oldestRecord: oldest,
+    newestRecord: newest,
+  }, 'getAggregatedStats query params');
+
+  // Use a window function approach to get one data point per period
+  // This is more reliable than DISTINCT ON in edge cases
+  // ROW_NUMBER() assigns 1 to the most recent entry within each truncated period
+  const query = `
+    WITH ranked AS (
+      SELECT
+        id,
+        alliance_id as "allianceId",
+        alliance_name as "allianceName",
+        credits_total as "creditsTotal",
+        rank,
+        user_count as "userCount",
+        user_online_count as "userOnlineCount",
+        recorded_at as "recordedAt",
+        date_trunc($1, recorded_at) as period_start,
+        ROW_NUMBER() OVER (
+          PARTITION BY date_trunc($1, recorded_at)
+          ORDER BY recorded_at DESC
+        ) as rn
+      FROM alliance_stats
+      WHERE alliance_id = $2
+        AND recorded_at >= $3
+    )
+    SELECT
+      id,
+      "allianceId",
+      "allianceName",
+      "creditsTotal",
+      rank,
+      "userCount",
+      "userOnlineCount",
+      "recordedAt",
+      period_start
+    FROM ranked
+    WHERE rn = 1
+    ORDER BY period_start DESC
     LIMIT $4
   `;
 
   const result = await pool.query(query, [period, allianceId, fromDate, limit]);
 
+  logger.info({
+    period,
+    aggregatedCount: result.rows.length,
+    periodStarts: result.rows.map(r => r.period_start),
+    timestamps: result.rows.map(r => r.recordedAt),
+  }, 'getAggregatedStats result');
+
   // Convert BigInt creditsTotal to Number and ensure proper date formatting
+  // Exclude period_start from response as it's only used internally
   return result.rows.map(row => ({
-    ...row,
+    id: row.id,
+    allianceId: row.allianceId,
+    allianceName: row.allianceName,
     creditsTotal: Number(row.creditsTotal),
+    rank: row.rank,
+    userCount: row.userCount,
+    userOnlineCount: row.userOnlineCount,
     recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
   }));
 }
