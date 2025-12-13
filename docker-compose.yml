@@ -85,26 +85,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Uptime Kuma - Status Monitoring
-  uptime-kuma:
-    image: louislam/uptime-kuma:1
-    container_name: lss-uptime-kuma
-    volumes:
-      - uptime_kuma_data:/app/data
-    ports:
-      - "127.0.0.1:3002:3001"  # Nur localhost, nginx proxied
-    networks:
-      - lss-network
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 volumes:
   postgres_data:
-  uptime_kuma_data:
 
 networks:
   lss-network:

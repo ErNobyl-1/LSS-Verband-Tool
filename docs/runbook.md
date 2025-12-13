@@ -76,7 +76,6 @@ docker compose ps
 # lss-api           Up (healthy)
 # lss-web           Up
 # lss-postgres      Up (healthy)
-# lss-uptime-kuma   Up (healthy)
 ```
 
 ### Logs anzeigen
@@ -354,16 +353,6 @@ curl -s http://localhost:3001/api/health | jq .
 - `checks.scraper`: running/stopped
 - `checks.memory`: ok/warning/critical
 - `stats.sseClients`: Anzahl verbundener Clients
-
-### Uptime Kuma
-
-1. Öffne `https://your-domain.de/status/`
-2. Initiales Setup beim ersten Aufruf
-3. Monitor hinzufügen:
-   - **Type:** HTTP(s)
-   - **URL:** `http://api:3001/api/health`
-   - **Interval:** 60 Sekunden
-4. Benachrichtigungen konfigurieren (Discord, Telegram, etc.)
 
 ### Log-Analyse
 
