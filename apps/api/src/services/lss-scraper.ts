@@ -277,17 +277,26 @@ class LssScraper {
   }
 
   private async fetchAllianceStats(): Promise<void> {
-    if (!this.page) return;
+    if (!this.browser || !this.page) return;
 
     try {
-      // Use the existing session to fetch the API endpoint
-      const response = await this.page.evaluate(async () => {
-        const res = await fetch('/api/allianceinfo');
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
-        return await res.json();
+      // Use direct HTTP request with session cookies (not browser-based fetch)
+      // This avoids "Execution context was destroyed" errors during navigation
+      const cookies = await this.page.cookies(this.config.baseUrl);
+      const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+      const res = await fetch(`${this.config.baseUrl}/api/allianceinfo`, {
+        headers: {
+          'Cookie': cookieHeader,
+          'Accept': 'application/json',
+        },
       });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const response = await res.json();
 
       if (response && typeof response.id === 'number') {
         await saveAllianceStats(response);
