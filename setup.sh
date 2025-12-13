@@ -456,7 +456,11 @@ fi
 # =============================================================================
 log_info "Konfiguriere nginx..."
 
-cat > /etc/nginx/sites-available/lss-verband-tool << EOF
+# Prüfen ob bereits konfiguriert (idempotent)
+if [ -f "/etc/nginx/sites-available/lss-verband-tool" ] && grep -q "$DOMAIN" /etc/nginx/sites-available/lss-verband-tool 2>/dev/null; then
+    log_success "nginx bereits für $DOMAIN konfiguriert"
+else
+    cat > /etc/nginx/sites-available/lss-verband-tool << EOF
 server {
     listen 80;
     listen [::]:80;
@@ -525,19 +529,28 @@ case $OS in
         ;;
 esac
 
-# nginx testen und starten
-nginx -t
-systemctl start nginx
-log_success "nginx gestartet"
+    # nginx testen und starten
+    nginx -t
+    systemctl start nginx
+    log_success "nginx gestartet"
+fi
 
 # =============================================================================
 # SSL-Zertifikat holen (Certbot konfiguriert nginx automatisch um)
 # =============================================================================
-log_info "Hole SSL-Zertifikat..."
+# Prüfen ob bereits SSL vorhanden (idempotent)
+if [ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]; then
+    log_success "SSL-Zertifikat bereits vorhanden für $DOMAIN"
+else
+    log_info "Hole SSL-Zertifikat..."
 
-certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --redirect
+    # nginx muss laufen für certbot
+    systemctl start nginx 2>/dev/null || true
 
-log_success "SSL-Zertifikat installiert"
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --redirect
+
+    log_success "SSL-Zertifikat installiert"
+fi
 
 # HSTS Header hinzufügen (Certbot macht das nicht automatisch)
 log_info "Füge HSTS Header hinzu..."
@@ -586,7 +599,7 @@ mkdir -p "$BACKUP_DIR"
 echo "[$(date)] Starting backup..."
 
 # PostgreSQL Backup via Docker
-docker compose -f "$INSTALL_DIR/docker-compose.yml" exec -T postgres pg_dump -U lss lss_tool > "$BACKUP_DIR/db_$DATE.sql"
+docker compose -f "$INSTALL_DIR/docker-compose.prod.yml" exec -T postgres pg_dump -U lss lss_tool > "$BACKUP_DIR/db_$DATE.sql"
 
 if [ $? -eq 0 ]; then
     gzip "$BACKUP_DIR/db_$DATE.sql"
@@ -616,12 +629,26 @@ chmod +x "$INSTALL_DIR/backup.sh"
 log_success "Backup-Script erstellt (täglich um 3:00 Uhr)"
 
 # =============================================================================
-# Docker Container starten
+# Docker Container starten (verwendet fertige Images von GHCR)
 # =============================================================================
 log_info "Starte Docker Container..."
 
 cd "$INSTALL_DIR"
-docker compose up -d --build
+
+# Prüfen ob Container bereits laufen
+if docker compose -f docker-compose.prod.yml ps 2>/dev/null | grep -q "Up"; then
+    log_warn "Container laufen bereits"
+    read -p "Container neu starten? (j/n): " RESTART_CONTAINERS
+    if [ "$RESTART_CONTAINERS" = "j" ] || [ "$RESTART_CONTAINERS" = "J" ]; then
+        docker compose -f docker-compose.prod.yml down
+        docker compose -f docker-compose.prod.yml pull
+        docker compose -f docker-compose.prod.yml up -d
+    fi
+else
+    # Images pullen und Container starten
+    docker compose -f docker-compose.prod.yml pull
+    docker compose -f docker-compose.prod.yml up -d
+fi
 
 log_success "Container gestartet"
 
@@ -653,7 +680,7 @@ sleep 5  # Warten bis Container hochgefahren sind
 HEALTH_OK=true
 
 # Docker Container prüfen
-if docker compose ps | grep -q "Up"; then
+if docker compose -f docker-compose.prod.yml ps | grep -q "Up"; then
     log_success "Docker Container laufen"
 else
     log_error "Docker Container Problem!"
@@ -722,11 +749,11 @@ echo "  Backup-Logs:    /var/log/lss-backup.log"
 echo ""
 echo -e "${BLUE}═══ BEFEHLE ═══${NC}"
 echo "  cd ${INSTALL_DIR}"
-echo "  docker compose logs -f        # Logs anzeigen"
-echo "  docker compose logs -f api    # Nur API-Logs"
-echo "  docker compose restart        # Neustart"
-echo "  docker compose down           # Stoppen"
-echo "  docker compose up -d --build  # Neu bauen & starten"
+echo "  ./update.sh                   # Update auf neue Version"
+echo "  docker compose -f docker-compose.prod.yml logs -f        # Logs anzeigen"
+echo "  docker compose -f docker-compose.prod.yml logs -f api    # Nur API-Logs"
+echo "  docker compose -f docker-compose.prod.yml restart        # Neustart"
+echo "  docker compose -f docker-compose.prod.yml down           # Stoppen"
 echo "  sudo ./backup.sh              # Manuelles Backup"
 echo ""
 echo -e "${BLUE}═══ AUTOMATISCHE TASKS ═══${NC}"
@@ -739,7 +766,7 @@ echo ""
 if [ "$HEALTH_OK" = false ]; then
     echo -e "${RED}═══ WARNUNG ═══${NC}"
     echo "Einige Dienste haben Probleme!"
-    echo "Prüfe Logs mit: docker compose logs"
+    echo "Prüfe Logs mit: docker compose -f docker-compose.prod.yml logs"
     echo ""
 fi
 
@@ -747,7 +774,7 @@ echo -e "${YELLOW}═══ JETZT ERLEDIGEN ═══${NC}"
 echo "1. BEIDE Passwörter sicher speichern (Admin + SSH)!"
 echo "2. Prüfe ob LSS_EMAIL und LSS_PASSWORD in .env gesetzt sind:"
 echo "   nano ${INSTALL_DIR}/.env"
-echo "3. Falls .env geändert: docker compose restart"
+echo "3. Falls .env geändert: docker compose -f docker-compose.prod.yml restart"
 echo "4. Teste Login: https://${DOMAIN}"
 echo "5. Teste SSH: ssh ${DEPLOY_USER}@${DOMAIN}"
 echo ""

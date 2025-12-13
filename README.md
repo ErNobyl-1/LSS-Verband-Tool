@@ -48,9 +48,11 @@ docker-compose up -d --build
 Für den Betrieb auf einem öffentlichen Server steht ein automatisches Setup-Script bereit.
 
 ### Voraussetzungen
-- **Server**: VPS oder Root-Server mit min. 2GB RAM
+- **Server**: VPS oder Root-Server mit min. 512MB RAM (2GB empfohlen)
 - **OS**: Debian 12/13 (empfohlen) oder Rocky Linux 9
 - **Domain**: Eine Domain mit A-Record auf die Server-IP
+
+> **Hinweis:** Das Setup verwendet fertige Docker-Images von GitHub Container Registry. Es wird nichts auf dem Server gebaut, daher reicht auch ein kleiner Server mit wenig RAM.
 
 ### Installation
 
@@ -254,11 +256,23 @@ Detaillierte Troubleshooting-Schritte findest du im [Runbook](docs/runbook.md).
 
 ## Updates
 
-```bash
-cd /opt/lss-verband-tool  # Auf Server
-# oder
-cd LSS-Verband-Tool       # Lokal
+### Server (Produktion)
 
+```bash
+cd /opt/lss-verband-tool
+./update.sh
+```
+
+Das Update-Script:
+- Holt die neueste Version von GitHub
+- Lädt die aktuellen Docker-Images
+- Startet die Container neu
+- Räumt alte Images auf
+
+### Lokal (Entwicklung)
+
+```bash
+cd LSS-Verband-Tool
 git pull
 docker compose up -d --build
 ```
