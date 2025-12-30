@@ -507,7 +507,15 @@ fi
 echo ""
 read -p "Jetzt .env bearbeiten? (j/n): " EDIT_ENV
 if [ "$EDIT_ENV" = "j" ] || [ "$EDIT_ENV" = "J" ]; then
-    ${EDITOR:-nano} "$INSTALL_DIR/.env"
+    # Editor bestimmen (vi ist auf allen Systemen vorhanden)
+    if command -v nano &> /dev/null; then
+        EDIT_CMD="nano"
+    elif [ -n "$EDITOR" ]; then
+        EDIT_CMD="$EDITOR"
+    else
+        EDIT_CMD="vi"
+    fi
+    $EDIT_CMD "$INSTALL_DIR/.env"
 fi
 
 # =============================================================================
