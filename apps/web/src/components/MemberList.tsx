@@ -99,7 +99,7 @@ export function MemberList({ showOffline = true }: MemberListProps) {
 
                   {/* Name */}
                   <div className="flex-1 min-w-0">
-                    <span className="font-medium truncate">{member.name}</span>
+                    <span className="font-medium truncate">{member.displayName || member.name}</span>
                   </div>
 
                   {/* Last online */}

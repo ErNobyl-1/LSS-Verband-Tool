@@ -1,5 +1,5 @@
 import { db } from '../db/index.js';
-import { allianceMembers, memberActivityLog, type NewAllianceMember } from '../db/schema.js';
+import { allianceMembers, memberActivityLog, users, type NewAllianceMember } from '../db/schema.js';
 import { eq, desc, and, gte, inArray } from 'drizzle-orm';
 
 interface AllianceMemberData {
@@ -113,7 +113,24 @@ export async function upsertMembers(
 }
 
 export async function getAllMembers(allianceId?: number) {
-  let query = db.select().from(allianceMembers);
+  // Join with users table to get displayName
+  let query = db
+    .select({
+      id: allianceMembers.id,
+      lssMemberId: allianceMembers.lssMemberId,
+      allianceId: allianceMembers.allianceId,
+      name: allianceMembers.name,
+      displayName: users.displayName,
+      roles: allianceMembers.roles,
+      caption: allianceMembers.caption,
+      isOnline: allianceMembers.isOnline,
+      roleFlags: allianceMembers.roleFlags,
+      firstSeenAt: allianceMembers.firstSeenAt,
+      lastSeenAt: allianceMembers.lastSeenAt,
+      lastOnlineAt: allianceMembers.lastOnlineAt,
+    })
+    .from(allianceMembers)
+    .leftJoin(users, eq(users.allianceMemberId, allianceMembers.id));
 
   if (allianceId) {
     query = query.where(eq(allianceMembers.allianceId, allianceId)) as typeof query;
@@ -135,9 +152,24 @@ export async function getOnlineMembers(allianceId?: number) {
     conditions.push(eq(allianceMembers.allianceId, allianceId));
   }
 
+  // Join with users table to get displayName
   const members = await db
-    .select()
+    .select({
+      id: allianceMembers.id,
+      lssMemberId: allianceMembers.lssMemberId,
+      allianceId: allianceMembers.allianceId,
+      name: allianceMembers.name,
+      displayName: users.displayName,
+      roles: allianceMembers.roles,
+      caption: allianceMembers.caption,
+      isOnline: allianceMembers.isOnline,
+      roleFlags: allianceMembers.roleFlags,
+      firstSeenAt: allianceMembers.firstSeenAt,
+      lastSeenAt: allianceMembers.lastSeenAt,
+      lastOnlineAt: allianceMembers.lastOnlineAt,
+    })
     .from(allianceMembers)
+    .leftJoin(users, eq(users.allianceMemberId, allianceMembers.id))
     .where(and(...conditions))
     .orderBy(allianceMembers.name);
 

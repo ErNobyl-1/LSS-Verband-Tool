@@ -126,6 +126,7 @@ export interface AllianceMember {
   lssMemberId: number;
   allianceId: number;
   name: string;
+  displayName: string | null;
   roles: string[];
   caption: string | null;
   isOnline: boolean;

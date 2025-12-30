@@ -20,13 +20,17 @@ export function Header({ connected, stats, user, onLogout }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const location = useLocation();
 
-  // Alphabetisch sortierte Listen
+  // Alphabetisch sortierte Listen (prefer displayName over name)
   const sortedOnlineMembers = useMemo(
-    () => [...onlineMembers].sort((a, b) => a.name.localeCompare(b.name, 'de')),
+    () => [...onlineMembers].sort((a, b) =>
+      (a.displayName || a.name).localeCompare(b.displayName || b.name, 'de')
+    ),
     [onlineMembers]
   );
   const sortedOfflineMembers = useMemo(
-    () => members.filter(m => !m.isOnline).sort((a, b) => a.name.localeCompare(b.name, 'de')),
+    () => members.filter(m => !m.isOnline).sort((a, b) =>
+      (a.displayName || a.name).localeCompare(b.displayName || b.name, 'de')
+    ),
     [members]
   );
 
@@ -162,7 +166,7 @@ export function Header({ connected, stats, user, onLogout }: HeaderProps) {
                           className="px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-gray-900"
                         >
                           <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                          <span className="text-sm truncate">{member.name}</span>
+                          <span className="text-sm truncate">{member.displayName || member.name}</span>
                         </li>
                       ))}
                     </ul>
@@ -186,7 +190,7 @@ export function Header({ connected, stats, user, onLogout }: HeaderProps) {
                           className="px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-gray-900"
                         >
                           <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
-                          <span className="text-sm truncate text-gray-600">{member.name}</span>
+                          <span className="text-sm truncate text-gray-600">{member.displayName || member.name}</span>
                         </li>
                       ))}
                     </ul>
