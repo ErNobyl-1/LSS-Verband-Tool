@@ -195,3 +195,38 @@ export async function deleteStaleIncidents(activeLsIds: string[]): Promise<Incid
 
   return staleIncidents;
 }
+
+/**
+ * Updates mission details (players, remaining time, etc.) without touching basic fields.
+ * This is used for the separate details fetch loop.
+ */
+export async function updateMissionDetails(lsId: string, details: Record<string, unknown>): Promise<void> {
+  const existing = await db.query.incidents.findFirst({
+    where: eq(incidents.lsId, lsId),
+  });
+
+  if (!existing) {
+    // Mission doesn't exist in database, skip update
+    return;
+  }
+
+  const now = new Date();
+
+  // Merge details into existing raw_json
+  const mergedJson = {
+    ...(existing.rawJson as Record<string, unknown> || {}),
+    ...details,
+  };
+
+  await db
+    .update(incidents)
+    .set({
+      rawJson: mergedJson,
+      updatedAt: now,
+      lastSeenAt: now,
+    })
+    .where(eq(incidents.lsId, lsId));
+
+  // Don't broadcast individual detail updates to avoid spam
+  // The batch broadcast from mission list updates is sufficient
+}
