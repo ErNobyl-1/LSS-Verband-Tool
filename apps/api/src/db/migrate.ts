@@ -48,6 +48,31 @@ export async function runMigrations(existingPool?: pg.Pool): Promise<void> {
     END $$;
   `);
 
+  // Add new incident columns if they don't exist (for existing databases)
+  await db.execute(sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='incidents' AND column_name='players_at_mission') THEN
+        ALTER TABLE incidents ADD COLUMN players_at_mission JSONB;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='incidents' AND column_name='players_driving') THEN
+        ALTER TABLE incidents ADD COLUMN players_driving JSONB;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='incidents' AND column_name='remaining_seconds') THEN
+        ALTER TABLE incidents ADD COLUMN remaining_seconds INTEGER;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='incidents' AND column_name='duration_seconds') THEN
+        ALTER TABLE incidents ADD COLUMN duration_seconds INTEGER;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='incidents' AND column_name='remaining_at') THEN
+        ALTER TABLE incidents ADD COLUMN remaining_at TIMESTAMP;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='incidents' AND column_name='exact_earnings') THEN
+        ALTER TABLE incidents ADD COLUMN exact_earnings INTEGER;
+      END IF;
+    END $$;
+  `);
+
   // Incidents indexes
   await db.execute(sql`CREATE INDEX IF NOT EXISTS incidents_source_idx ON incidents(source)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS incidents_category_idx ON incidents(category)`);
