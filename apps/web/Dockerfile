@@ -3,11 +3,11 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Install dependencies
-COPY package*.json ./
+COPY apps/web/package*.json ./
 RUN npm ci
 
 # Copy source code
-COPY . .
+COPY apps/web/ .
 
 # Build argument for API URL
 ARG VITE_API_URL

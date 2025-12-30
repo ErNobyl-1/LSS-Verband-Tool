@@ -31,11 +31,11 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 WORKDIR /app
 
 # Install dependencies
-COPY package*.json ./
+COPY apps/api/package*.json ./
 RUN npm install
 
 # Copy source code
-COPY . .
+COPY apps/api/ .
 
 # Create startup script that runs migrations then starts the app
 RUN echo '#!/bin/bash' > /app/start.sh && \
