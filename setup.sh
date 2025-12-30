@@ -233,6 +233,21 @@ else
 fi
 
 # =============================================================================
+# EPEL Repository aktivieren (für Rocky/CentOS/RHEL)
+# =============================================================================
+case $OS in
+    rocky|centos|rhel|almalinux)
+        if ! rpm -q epel-release &> /dev/null; then
+            log_info "Aktiviere EPEL Repository..."
+            $PKG_INSTALL epel-release
+            log_success "EPEL Repository aktiviert"
+        else
+            log_success "EPEL Repository bereits aktiviert"
+        fi
+        ;;
+esac
+
+# =============================================================================
 # Certbot installieren
 # =============================================================================
 log_info "Installiere Certbot..."
@@ -287,15 +302,7 @@ log_info "Installiere fail2ban..."
 if command -v fail2ban-client &> /dev/null; then
     log_success "fail2ban bereits installiert"
 else
-    case $OS in
-        debian|ubuntu)
-            $PKG_INSTALL fail2ban
-            ;;
-        rocky|centos|rhel|almalinux)
-            dnf install -y epel-release
-            dnf install -y fail2ban
-            ;;
-    esac
+    $PKG_INSTALL fail2ban
 fi
 
 # fail2ban Konfiguration
