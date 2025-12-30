@@ -568,11 +568,32 @@ fi
 # =============================================================================
 log_info "Konfiguriere nginx..."
 
+# Bestimme nginx Konfigurationspfad basierend auf OS
+case $OS in
+    debian|ubuntu)
+        NGINX_CONF_DIR="/etc/nginx/sites-available"
+        NGINX_CONF_FILE="$NGINX_CONF_DIR/lss-verband-tool"
+        NGINX_ENABLED_DIR="/etc/nginx/sites-enabled"
+        ;;
+    rocky|centos|rhel|almalinux)
+        NGINX_CONF_DIR="/etc/nginx/conf.d"
+        NGINX_CONF_FILE="$NGINX_CONF_DIR/lss-verband-tool.conf"
+        ;;
+esac
+
+# Verzeichnisse erstellen falls nicht vorhanden
+mkdir -p "$NGINX_CONF_DIR"
+case $OS in
+    debian|ubuntu)
+        mkdir -p "$NGINX_ENABLED_DIR"
+        ;;
+esac
+
 # Prüfen ob bereits konfiguriert (idempotent)
-if [ -f "/etc/nginx/sites-available/lss-verband-tool" ] && grep -q "$DOMAIN" /etc/nginx/sites-available/lss-verband-tool 2>/dev/null; then
+if [ -f "$NGINX_CONF_FILE" ] && grep -q "$DOMAIN" "$NGINX_CONF_FILE" 2>/dev/null; then
     log_success "nginx bereits für $DOMAIN konfiguriert"
 else
-    cat > /etc/nginx/sites-available/lss-verband-tool << EOF
+    cat > "$NGINX_CONF_FILE" << EOF
 server {
     listen 80;
     listen [::]:80;
@@ -618,21 +639,22 @@ server {
 }
 EOF
 
-# Sites-enabled Symlink
-case $OS in
-    debian|ubuntu)
-        ln -sf /etc/nginx/sites-available/lss-verband-tool /etc/nginx/sites-enabled/
-        rm -f /etc/nginx/sites-enabled/default
-        ;;
-    rocky|centos|rhel|almalinux)
-        cp /etc/nginx/sites-available/lss-verband-tool /etc/nginx/conf.d/lss-verband-tool.conf
-        ;;
-esac
+    # Sites-enabled Symlink (nur für Debian/Ubuntu)
+    case $OS in
+        debian|ubuntu)
+            ln -sf "$NGINX_CONF_FILE" /etc/nginx/sites-enabled/
+            rm -f /etc/nginx/sites-enabled/default
+            ;;
+        rocky|centos|rhel|almalinux)
+            # Konfiguration ist bereits in conf.d/, nichts zu tun
+            :
+            ;;
+    esac
 
     # nginx testen und starten
     nginx -t
     systemctl start nginx
-    log_success "nginx gestartet"
+    log_success "nginx konfiguriert und gestartet"
 fi
 
 # =============================================================================
@@ -654,17 +676,10 @@ fi
 
 # HSTS Header hinzufügen (Certbot macht das nicht automatisch)
 log_info "Füge HSTS Header hinzu..."
-case $OS in
-    debian|ubuntu)
-        NGINX_CONF="/etc/nginx/sites-available/lss-verband-tool"
-        ;;
-    rocky|centos|rhel|almalinux)
-        NGINX_CONF="/etc/nginx/conf.d/lss-verband-tool.conf"
-        ;;
-esac
 
 # HSTS in den SSL-Block einfügen (nach ssl_dhparam Zeile)
-sed -i '/ssl_dhparam/a\    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;' "$NGINX_CONF"
+# Verwende $NGINX_CONF_FILE die wir oben definiert haben
+sed -i '/ssl_dhparam/a\    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;' "$NGINX_CONF_FILE"
 
 nginx -t && systemctl reload nginx
 log_success "nginx konfiguriert (HTTPS aktiv)"
