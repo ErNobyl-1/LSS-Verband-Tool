@@ -455,6 +455,9 @@ if [ "$ENV_EXISTS" = false ]; then
     sed -i "s|VITE_API_URL=.*|VITE_API_URL=https://${DOMAIN}/api|" "$INSTALL_DIR/.env"
     sed -i "s|NODE_ENV=.*|NODE_ENV=production|" "$INSTALL_DIR/.env"
 
+    # DATABASE_URL mit generiertem Passwort aktualisieren
+    sed -i "s|DATABASE_URL=.*|DATABASE_URL=postgresql://lss:${POSTGRES_PW}@postgres:5432/lss_tool|" "$INSTALL_DIR/.env"
+
     log_success ".env mit generierten Passwörtern konfiguriert"
 else
     # Fehlende Variablen aus .env.example hinzufügen
@@ -479,6 +482,9 @@ else
     # Bestehende Passwörter aus .env auslesen
     ADMIN_PW=$(grep "^ADMIN_PASSWORD=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
     POSTGRES_PW=$(grep "^POSTGRES_PASSWORD=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+
+    # DATABASE_URL mit bestehendem Passwort aktualisieren
+    sed -i "s|DATABASE_URL=.*|DATABASE_URL=postgresql://lss:${POSTGRES_PW}@postgres:5432/lss_tool|" "$INSTALL_DIR/.env"
 
     log_success ".env aktualisiert (Passwörter beibehalten, neue Variablen hinzugefügt)"
 fi
