@@ -15,6 +15,13 @@ export const incidents = pgTable('incidents', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
   rawJson: jsonb('raw_json'),
+  // Mission details fields (updated separately from mission list)
+  playersAtMission: jsonb('players_at_mission').$type<string[]>(),
+  playersDriving: jsonb('players_driving').$type<string[]>(),
+  remainingSeconds: integer('remaining_seconds'),
+  durationSeconds: integer('duration_seconds'),
+  remainingAt: timestamp('remaining_at'),
+  exactEarnings: integer('exact_earnings'), // Exact credits for planned missions only
 }, (table) => ({
   lsIdIdx: uniqueIndex('incidents_ls_id_idx').on(table.lsId),
   sourceIdx: index('incidents_source_idx').on(table.source),

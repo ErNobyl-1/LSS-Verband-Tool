@@ -511,7 +511,8 @@ class LssScraper {
 
   // New method: Only scrape mission list (fast, DOM-based)
   private async scrapeMissionList(): Promise<void> {
-    if (this.isRunning || !this.page) return;
+    // Don't scrape mission list if details are being fetched, or if already running
+    if (this.isRunning || this.isDetailsFetching || !this.page) return;
 
     this.isRunning = true;
 
@@ -732,15 +733,30 @@ class LssScraper {
               return players;
             }
 
+            // Extract exact earnings for planned missions
+            // Simple pattern: find "Verdienst" followed by numbers
+            var exactEarnings = null;
+            var earningsMatch = bodyText.match(/Verdienst.*?([\\d.]+)/i);
+            if (earningsMatch) {
+              // Remove dots (thousands separator) and parse as integer
+              var earningsStr = earningsMatch[1].replace(/\\./g, '');
+              var parsed = parseInt(earningsStr, 10);
+              // Only accept reasonable numbers (> 100)
+              if (!isNaN(parsed) && parsed > 100) {
+                exactEarnings = parsed;
+              }
+            }
+
             return {
               remaining_seconds: remainingSeconds,
               remaining_at: new Date().toISOString(),
               duration_seconds: durationSeconds,
               players_driving: getPlayers('mission_vehicle_driving'),
               players_at_mission: getPlayers('mission_vehicle_at_mission'),
+              exact_earnings: exactEarnings,
             };
           })()
-        `) as { remaining_seconds: number | null; remaining_at: string; duration_seconds: number | null; players_driving: string[]; players_at_mission: string[] };
+        `) as { remaining_seconds: number | null; remaining_at: string; duration_seconds: number | null; players_driving: string[]; players_at_mission: string[]; exact_earnings: number | null };
 
         // Merge into raw_json
         mission.raw_json.remaining_seconds = details.remaining_seconds;
@@ -748,6 +764,7 @@ class LssScraper {
         mission.raw_json.duration_seconds = details.duration_seconds;
         mission.raw_json.players_driving = details.players_driving;
         mission.raw_json.players_at_mission = details.players_at_mission;
+        mission.raw_json.exact_earnings = details.exact_earnings;
 
         detailsCount++;
         if (details.remaining_seconds !== null) withTimeCount++;
@@ -769,35 +786,19 @@ class LssScraper {
     }
   }
 
-  // New method: Fetch pending mission details via HTTP
+  // New method: Fetch pending mission details via browser
   private async fetchPendingMissionDetails(): Promise<void> {
-    if (this.isDetailsFetching || this.pendingDetailFetches.length === 0) return;
+    // Don't fetch details if mission list is being scraped, or if already fetching, or if no details to fetch
+    if (this.isRunning || this.isDetailsFetching || this.pendingDetailFetches.length === 0 || !this.page) return;
 
     this.isDetailsFetching = true;
 
     try {
       const missionIds = [...this.pendingDetailFetches]; // Copy array
-      logger.debug({ count: missionIds.length }, 'Fetching mission details via HTTP');
+      logger.debug({ count: missionIds.length }, 'Fetching mission details via browser');
 
-      if (this.config.httpDetailsEnabled) {
-        await this.fetchMissionDetailsHTTP(missionIds);
-      } else {
-        // Fallback to Puppeteer method
-        logger.warn('HTTP details disabled, falling back to Puppeteer method');
-        const missions = missionIds.map(id => ({
-          ls_id: id,
-          title: '',
-          type: null,
-          status: 'active',
-          source: 'unknown' as const,
-          category: 'emergency' as const,
-          lat: null,
-          lon: null,
-          address: null,
-          raw_json: {},
-        }));
-        await this.fetchMissionDetails(missions);
-      }
+      // Use browser-based method
+      await this.fetchMissionDetailsBrowser(missionIds);
 
       this.lastDetailsFetchAt = new Date();
       this.detailsFetchCount++;
@@ -805,6 +806,188 @@ class LssScraper {
       logger.error({ err: error }, 'Error fetching pending mission details');
     } finally {
       this.isDetailsFetching = false;
+    }
+  }
+
+  // Browser-based mission details fetcher (optimized to not block)
+  private async fetchMissionDetailsBrowser(missionIds: string[]): Promise<void> {
+    if (!this.page || missionIds.length === 0) return;
+
+    logger.debug({ count: missionIds.length }, 'Fetching mission details via browser...');
+
+    // Process missions sequentially to avoid issues with page navigation
+    let detailsCount = 0;
+    let withTimeCount = 0;
+
+    for (const missionId of missionIds) {
+      try {
+        // Navigate to mission detail page
+        const url = `${this.config.baseUrl}/missions/${missionId}`;
+        const response = await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+        // 304 is fine (not modified), any 2xx or 304 is OK
+        const status = response?.status();
+        if (!response || (status !== 304 && (status === undefined || status < 200 || status >= 400))) {
+          logger.warn({ missionId, status }, 'Failed to load mission details');
+          continue;
+        }
+
+        // Listen to console messages from the page
+        const consoleMessages: string[] = [];
+        const consoleHandler = (msg: { text: () => string }) => {
+          const text = msg.text();
+          consoleMessages.push(text);
+        };
+        this.page.on('console', consoleHandler);
+
+        // Extract data from the page
+        // Note: Using a single function string to avoid TypeScript transpilation issues
+        const details = await this.page.evaluate(`
+          (function() {
+            var missionId = "${missionId}";
+            var remainingSeconds = null;
+
+            var countdownEl = document.getElementById('mission_countdown_' + missionId);
+            if (countdownEl) {
+              var timeText = countdownEl.textContent ? countdownEl.textContent.trim() : '';
+              if (timeText) {
+                var parts = timeText.split(':').map(function(p) { return parseInt(p, 10); });
+                if (parts.length === 3 && parts.every(function(p) { return !isNaN(p); })) {
+                  remainingSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+                } else if (parts.length === 2 && parts.every(function(p) { return !isNaN(p); })) {
+                  remainingSeconds = parts[0] * 60 + parts[1];
+                }
+              }
+            }
+
+            // Extract mission duration from detail page (e.g., "Dauer: 2 Stunden" or "Dauer: 1 Stunde 30 Minuten")
+            var durationSeconds = null;
+            var bodyText = document.body.innerText || '';
+            var durationMatch = bodyText.match(/Dauer:\\s*(?:(\\d+)\\s*Stunden?)?\\s*(?:(\\d+)\\s*Minuten?)?/i);
+            if (durationMatch) {
+              var hours = parseInt(durationMatch[1], 10) || 0;
+              var minutes = parseInt(durationMatch[2], 10) || 0;
+              if (hours > 0 || minutes > 0) {
+                durationSeconds = hours * 3600 + minutes * 60;
+              }
+            }
+
+            // Extract players from vehicle table
+            function getPlayers(tableId) {
+              var table = document.getElementById(tableId);
+              if (!table) {
+                // Debug: Log which table IDs are found
+                var allIds = Array.from(document.querySelectorAll('[id]')).map(function(el) { return el.id; }).filter(function(id) { return id.includes('mission') || id.includes('vehicle'); });
+                console.log('Table ' + tableId + ' not found. Available IDs:', allIds);
+                return [];
+              }
+              var playerLinks = table.querySelectorAll('a[href^="/profile/"]');
+              var players = [];
+              var seen = {};
+              playerLinks.forEach(function(link) {
+                var name = link.textContent ? link.textContent.trim() : '';
+                if (name && !seen[name]) {
+                  seen[name] = true;
+                  players.push(name);
+                }
+              });
+              console.log('Table ' + tableId + ' found, extracted ' + players.length + ' players:', players);
+              return players;
+            }
+
+            // Extract earnings text for planned missions (parse it later in Node.js)
+            var earningsRawText = null;
+            try {
+              var colLeft = document.getElementById('col_left');
+              if (colLeft) {
+                var colLeftText = colLeft.textContent || colLeft.innerText || '';
+                var verdienstIndex = colLeftText.indexOf('Verdienst');
+                if (verdienstIndex >= 0) {
+                  var creditsIndex = colLeftText.indexOf('Credits', verdienstIndex);
+                  if (creditsIndex >= 0) {
+                    // Extract everything from "Verdienst" to "Credits" (inclusive)
+                    earningsRawText = colLeftText.substring(verdienstIndex, creditsIndex + 7); // +7 for "Credits"
+                  }
+                }
+              }
+            } catch (e) {
+              // Silent catch
+            }
+
+            return {
+              remaining_seconds: remainingSeconds,
+              remaining_at: new Date().toISOString(),
+              duration_seconds: durationSeconds,
+              players_driving: getPlayers('mission_vehicle_driving'),
+              players_at_mission: getPlayers('mission_vehicle_at_mission'),
+              earnings_raw_text: earningsRawText,
+            };
+          })()
+        `) as { remaining_seconds: number | null; remaining_at: string; duration_seconds: number | null; players_driving: string[]; players_at_mission: string[]; earnings_raw_text: string | null };
+
+        // Remove console handler
+        this.page.off('console', consoleHandler);
+
+        // Parse exact earnings from raw text (in Node.js context where we have full control)
+        let exactEarnings: number | null = null;
+        if (details.earnings_raw_text) {
+          // Extract number from text like "Verdienst: 14.500 Credits"
+          // German number format uses dots as thousands separator
+          const match = details.earnings_raw_text.match(/(\d[\d.]*\d|\d)/);
+          if (match) {
+            // Remove dots (thousands separator) and parse as integer
+            const numberStr = match[0].replace(/\./g, '');
+            exactEarnings = parseInt(numberStr, 10);
+          }
+        }
+
+        // Prepare details for database update
+        const detailsForDb = {
+          remaining_seconds: details.remaining_seconds,
+          remaining_at: details.remaining_at,
+          duration_seconds: details.duration_seconds,
+          players_driving: details.players_driving,
+          players_at_mission: details.players_at_mission,
+          exact_earnings: exactEarnings,
+        };
+
+        // Log extracted details for debugging
+        logger.debug({
+          missionId,
+          playersDriving: details.players_driving,
+          playersAtMission: details.players_at_mission,
+          remainingSeconds: details.remaining_seconds,
+          exactEarnings,
+          consoleMessages: consoleMessages.slice(0, 10), // Log first 10 console messages
+        }, 'Extracted mission details');
+
+        // Log what we're passing to updateMissionDetails
+        logger.debug({
+          missionId,
+          detailsKeys: Object.keys(detailsForDb),
+          detailsJson: JSON.stringify(detailsForDb),
+        }, 'Calling updateMissionDetails with');
+
+        // Update in database directly
+        await updateMissionDetails(missionId, detailsForDb);
+
+        detailsCount++;
+        if (details.remaining_seconds !== null) withTimeCount++;
+
+      } catch (error) {
+        logger.error({ err: error, missionId }, 'Error fetching mission details');
+      }
+    }
+
+    // Navigate back to main page
+    try {
+      await this.page.goto(this.config.baseUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+    } catch {
+      // Ignore navigation errors
+    }
+
+    if (detailsCount > 0) {
+      logger.debug({ fetched: detailsCount, total: missionIds.length, withCountdown: withTimeCount }, 'Mission details fetched');
     }
   }
 
@@ -950,12 +1133,26 @@ class LssScraper {
     const playersDriving = getPlayers('mission_vehicle_driving');
     const playersAtMission = getPlayers('mission_vehicle_at_mission');
 
+    // Extract exact earnings for planned missions (only visible in planned missions)
+    // Format: "Verdienst: 14.500 Credits" (Cheerio's .text() method converts &nbsp; to regular space)
+    let exactEarnings: number | null = null;
+    const earningsMatch = bodyText.match(/Verdienst:\s*([\d.]+)\s*Credits/i);
+    if (earningsMatch) {
+      // Remove dots (thousands separator) and parse as integer
+      const earningsStr = earningsMatch[1].replace(/\./g, '');
+      exactEarnings = parseInt(earningsStr, 10);
+      if (isNaN(exactEarnings)) {
+        exactEarnings = null;
+      }
+    }
+
     return {
       remaining_seconds: remainingSeconds,
       remaining_at: new Date().toISOString(),
       duration_seconds: durationSeconds,
       players_driving: playersDriving,
       players_at_mission: playersAtMission,
+      exact_earnings: exactEarnings,
     };
   }
 

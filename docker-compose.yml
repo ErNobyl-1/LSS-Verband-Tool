@@ -23,8 +23,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./apps/api/Dockerfile
     container_name: lss-api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-lss}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lss_tool}
@@ -35,7 +35,11 @@ services:
       # LSS Scraper credentials
       LSS_EMAIL: ${LSS_EMAIL:-}
       LSS_PASSWORD: ${LSS_PASSWORD:-}
-      LSS_SCRAPE_INTERVAL_MS: ${LSS_SCRAPE_INTERVAL_MS:-10000}
+      LSS_MISSION_LIST_INTERVAL_MS: ${LSS_MISSION_LIST_INTERVAL_MS:-1000}
+      LSS_MISSION_DETAILS_INTERVAL_MS: ${LSS_MISSION_DETAILS_INTERVAL_MS:-15000}
+      LSS_HTTP_DETAILS_ENABLED: ${LSS_HTTP_DETAILS_ENABLED:-false}
+      LSS_HTTP_DETAILS_PARALLEL: ${LSS_HTTP_DETAILS_PARALLEL:-5}
+      LSS_HTTP_DETAILS_BATCH_DELAY_MS: ${LSS_HTTP_DETAILS_BATCH_DELAY_MS:-500}
       LSS_ALLIANCE_STATS_INTERVAL_MS: ${LSS_ALLIANCE_STATS_INTERVAL_MS:-300000}
       LSS_MEMBER_TRACKING_INTERVAL_MS: ${LSS_MEMBER_TRACKING_INTERVAL_MS:-60000}
       LSS_HEADLESS: ${LSS_HEADLESS:-true}
@@ -67,8 +71,8 @@ services:
 
   web:
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./apps/web/Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
     container_name: lss-web

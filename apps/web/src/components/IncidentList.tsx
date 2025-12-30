@@ -26,30 +26,27 @@ function getTimeleft(incident: Incident): number | null {
   return Math.floor(timeleftMs / 1000);
 }
 
-// Parse remaining_seconds from rawJson (exact seconds remaining from detail page)
+// Parse remaining_seconds from incident fields (exact seconds remaining from detail page)
 // This is fetched from the mission detail page and is more accurate
 function getRemainingSeconds(incident: Incident): { seconds: number; at: Date } | null {
-  const rawJson = incident.rawJson as Record<string, unknown> | null;
-  if (!rawJson || rawJson.remaining_seconds === null || rawJson.remaining_seconds === undefined) {
+  if (incident.remainingSeconds === null || incident.remainingSeconds === undefined) {
     return null;
   }
-  const seconds = parseInt(String(rawJson.remaining_seconds), 10);
+  const seconds = incident.remainingSeconds;
   if (isNaN(seconds) || seconds < 0) return null;
 
-  const atStr = rawJson.remaining_at as string | undefined;
-  const at = atStr ? new Date(atStr) : new Date(incident.lastSeenAt);
+  const at = incident.remainingAt ? new Date(incident.remainingAt) : new Date(incident.lastSeenAt);
 
   return { seconds, at };
 }
 
-// Parse duration_seconds from rawJson (mission duration from detail page)
+// Parse duration_seconds from incident fields (mission duration from detail page)
 // Used to calculate end time for planned missions that haven't started yet
 function getDurationSeconds(incident: Incident): number | null {
-  const rawJson = incident.rawJson as Record<string, unknown> | null;
-  if (!rawJson || rawJson.duration_seconds === null || rawJson.duration_seconds === undefined) {
+  if (incident.durationSeconds === null || incident.durationSeconds === undefined) {
     return null;
   }
-  const seconds = parseInt(String(rawJson.duration_seconds), 10);
+  const seconds = incident.durationSeconds;
   if (isNaN(seconds) || seconds <= 0) return null;
   return seconds;
 }
@@ -65,13 +62,10 @@ function getProgressPercent(incident: Incident): number | null {
   return isNaN(percent) ? null : percent;
 }
 
-// Get participating players from rawJson
+// Get participating players from incident fields
 function getParticipatingPlayers(incident: Incident): { driving: string[]; atMission: string[] } | null {
-  const rawJson = incident.rawJson as Record<string, unknown> | null;
-  if (!rawJson) return null;
-
-  const driving = Array.isArray(rawJson.players_driving) ? rawJson.players_driving as string[] : [];
-  const atMission = Array.isArray(rawJson.players_at_mission) ? rawJson.players_at_mission as string[] : [];
+  const driving = incident.playersDriving || [];
+  const atMission = incident.playersAtMission || [];
 
   if (driving.length === 0 && atMission.length === 0) return null;
   return { driving, atMission };
@@ -336,9 +330,10 @@ function getStatusColor(status: string | null) {
   return colors[status || 'yellow'] || colors.yellow;
 }
 
-function formatCredits(credits: number | null): string {
+function formatCredits(credits: number | null, isExact: boolean = false): string {
   if (credits === null) return '';
-  return `⌀ ${credits.toLocaleString('de-DE')} ¢`;
+  const prefix = isExact ? '' : '⌀ ';
+  return `${prefix}${credits.toLocaleString('de-DE')} ¢`;
 }
 
 function cleanTitle(title: string) {
@@ -348,11 +343,9 @@ function cleanTitle(title: string) {
 // Check if user has vehicles at this incident
 function userHasVehiclesAtIncident(incident: Incident, userName: string | undefined): boolean {
   if (!userName) return false;
-  const rawJson = incident.rawJson as Record<string, unknown> | null;
-  if (!rawJson) return false;
 
-  const driving = Array.isArray(rawJson.players_driving) ? rawJson.players_driving as string[] : [];
-  const atMission = Array.isArray(rawJson.players_at_mission) ? rawJson.players_at_mission as string[] : [];
+  const driving = incident.playersDriving || [];
+  const atMission = incident.playersAtMission || [];
 
   return driving.includes(userName) || atMission.includes(userName);
 }
@@ -390,7 +383,11 @@ export function IncidentList({ incidents, loading, error, user }: IncidentListPr
     <div className="space-y-2 p-2">
       {incidents.map((incident) => {
         const statusColor = getStatusColor(incident.status);
-        const avgCredits = getCredits(incident.type);
+        // For planned missions, prefer exact earnings if available, otherwise fall back to average
+        const hasExactEarnings = incident.category === 'planned' && incident.exactEarnings !== null;
+        const credits = hasExactEarnings
+          ? incident.exactEarnings
+          : getCredits(incident.type);
         const hasOwnVehicles = userHasVehiclesAtIncident(incident, userName);
 
         return (
@@ -418,9 +415,9 @@ export function IncidentList({ incidents, loading, error, user }: IncidentListPr
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  {avgCredits !== null && (
+                  {credits !== null && (
                     <div className="text-sm font-medium text-gray-600 whitespace-nowrap">
-                      {formatCredits(avgCredits)}
+                      {formatCredits(credits, hasExactEarnings)}
                     </div>
                   )}
                   {(incident.category === 'planned' || incident.category === 'emergency') && (

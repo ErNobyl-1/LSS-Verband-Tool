@@ -25,11 +25,9 @@ function getMarkerColor(status: string | null): string {
 // Check if user has vehicles at this incident
 function userHasVehiclesAtIncident(incident: Incident, userName: string | undefined): boolean {
   if (!userName) return false;
-  const rawJson = incident.rawJson as Record<string, unknown> | null;
-  if (!rawJson) return false;
 
-  const driving = Array.isArray(rawJson.players_driving) ? rawJson.players_driving as string[] : [];
-  const atMission = Array.isArray(rawJson.players_at_mission) ? rawJson.players_at_mission as string[] : [];
+  const driving = incident.playersDriving || [];
+  const atMission = incident.playersAtMission || [];
 
   return driving.includes(userName) || atMission.includes(userName);
 }

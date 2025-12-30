@@ -2,6 +2,7 @@ import { db, incidents, Incident } from '../db/index.js';
 import { eq, ilike, and, or, sql, desc } from 'drizzle-orm';
 import { IncidentInput, IncidentQuery } from '../validation/schemas.js';
 import { broadcastIncident, broadcastBatch } from './sse.js';
+import { dbLogger as logger } from '../lib/logger.js';
 
 export async function upsertIncident(input: IncidentInput): Promise<{ incident: Incident; isNew: boolean }> {
   const now = new Date();
@@ -37,6 +38,7 @@ export async function upsertIncident(input: IncidentInput): Promise<{ incident: 
         rawJson: input.raw_json ?? existing.rawJson,
         updatedAt: hasChanges ? now : existing.updatedAt,
         lastSeenAt: now,
+        // Note: player fields are NOT updated here - they are updated separately by updateMissionDetails
       })
       .where(eq(incidents.lsId, input.ls_id))
       .returning();
@@ -207,25 +209,33 @@ export async function updateMissionDetails(lsId: string, details: Record<string,
 
   if (!existing) {
     // Mission doesn't exist in database, skip update
+    logger.warn({ lsId }, 'Cannot update mission details: mission not found in database');
     return;
   }
 
   const now = new Date();
 
-  // Merge details into existing raw_json
-  const mergedJson = {
-    ...(existing.rawJson as Record<string, unknown> || {}),
-    ...details,
-  };
-
+  // Update mission detail fields in separate columns
   await db
     .update(incidents)
     .set({
-      rawJson: mergedJson,
+      playersAtMission: (details.players_at_mission as string[]) ?? null,
+      playersDriving: (details.players_driving as string[]) ?? null,
+      remainingSeconds: (details.remaining_seconds as number) ?? null,
+      durationSeconds: (details.duration_seconds as number) ?? null,
+      remainingAt: details.remaining_at ? new Date(details.remaining_at as string) : null,
+      exactEarnings: (details.exact_earnings as number) ?? null,
       updatedAt: now,
       lastSeenAt: now,
     })
     .where(eq(incidents.lsId, lsId));
+
+  logger.debug({
+    lsId,
+    playersAtMission: details.players_at_mission,
+    playersDriving: details.players_driving,
+    remainingSeconds: details.remaining_seconds,
+  }, 'Mission details updated');
 
   // Don't broadcast individual detail updates to avoid spam
   // The batch broadcast from mission list updates is sufficient

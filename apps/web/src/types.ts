@@ -13,6 +13,13 @@ export interface Incident {
   updatedAt: string;
   lastSeenAt: string;
   rawJson: Record<string, unknown> | null;
+  // Mission details fields (updated separately from mission list)
+  playersAtMission: string[] | null;
+  playersDriving: string[] | null;
+  remainingSeconds: number | null;
+  durationSeconds: number | null;
+  remainingAt: string | null;
+  exactEarnings: number | null; // Exact credits for planned missions only
 }
 
 export interface IncidentsResponse {
