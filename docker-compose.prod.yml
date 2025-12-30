@@ -68,7 +68,13 @@ services:
         max-file: "5"
 
   web:
+    # Use pre-built image from GHCR, or build locally if you need custom VITE_API_URL
     image: ghcr.io/ernobyl-1/lss-verband-tool-web:latest
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
     container_name: lss-web
     ports:
       - "127.0.0.1:3000:3000"

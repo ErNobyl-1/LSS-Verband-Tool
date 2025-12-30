@@ -744,7 +744,7 @@ chmod +x "$INSTALL_DIR/backup.sh"
 log_success "Backup-Script erstellt (täglich um 3:00 Uhr)"
 
 # =============================================================================
-# Docker Container starten (verwendet fertige Images von GHCR)
+# Docker Container starten (baut Frontend lokal mit korrekter API-URL)
 # =============================================================================
 log_info "Starte Docker Container..."
 
@@ -756,12 +756,16 @@ if docker compose -f docker-compose.prod.yml ps 2>/dev/null | grep -q "Up"; then
     read -p "Container neu starten? (j/n): " RESTART_CONTAINERS
     if [ "$RESTART_CONTAINERS" = "j" ] || [ "$RESTART_CONTAINERS" = "J" ]; then
         docker compose -f docker-compose.prod.yml down
-        docker compose -f docker-compose.prod.yml pull
+        # Pull API Image, build Web lokal mit VITE_API_URL
+        docker compose -f docker-compose.prod.yml pull api
+        docker compose -f docker-compose.prod.yml build --no-cache web
         docker compose -f docker-compose.prod.yml up -d
     fi
 else
-    # Images pullen und Container starten
-    docker compose -f docker-compose.prod.yml pull
+    # Pull API Image, build Web lokal mit VITE_API_URL aus .env
+    log_info "Lade API Image und baue Frontend mit korrekter API-URL..."
+    docker compose -f docker-compose.prod.yml pull api
+    docker compose -f docker-compose.prod.yml build --no-cache web
     docker compose -f docker-compose.prod.yml up -d
 fi
 
