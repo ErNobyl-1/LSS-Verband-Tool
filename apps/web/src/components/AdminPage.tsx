@@ -228,8 +228,21 @@ function PasswordDialog({ user, onClose, onReset }: PasswordDialogProps) {
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError('Passwort muss mindestens 6 Zeichen haben');
+    // Password validation (must match backend requirements)
+    if (newPassword.length < 8) {
+      setError('Passwort muss mindestens 8 Zeichen lang sein');
+      return;
+    }
+    if (!/[a-zA-Z]/.test(newPassword)) {
+      setError('Passwort muss mindestens einen Buchstaben enthalten');
+      return;
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      setError('Passwort muss mindestens eine Zahl enthalten');
+      return;
+    }
+    if (!/[^a-zA-Z0-9]/.test(newPassword)) {
+      setError('Passwort muss mindestens ein Sonderzeichen enthalten');
       return;
     }
 

@@ -73,8 +73,21 @@ export function SettingsPage({ user, onUserUpdate }: SettingsPageProps) {
       return;
     }
 
-    if (newPassword.length < 6) {
-      setPasswordMessage({ type: 'error', text: 'Neues Passwort muss mindestens 6 Zeichen haben' });
+    // Password validation (must match backend requirements)
+    if (newPassword.length < 8) {
+      setPasswordMessage({ type: 'error', text: 'Passwort muss mindestens 8 Zeichen lang sein' });
+      return;
+    }
+    if (!/[a-zA-Z]/.test(newPassword)) {
+      setPasswordMessage({ type: 'error', text: 'Passwort muss mindestens einen Buchstaben enthalten' });
+      return;
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      setPasswordMessage({ type: 'error', text: 'Passwort muss mindestens eine Zahl enthalten' });
+      return;
+    }
+    if (!/[^a-zA-Z0-9]/.test(newPassword)) {
+      setPasswordMessage({ type: 'error', text: 'Passwort muss mindestens ein Sonderzeichen enthalten' });
       return;
     }
 
