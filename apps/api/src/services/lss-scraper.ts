@@ -1,5 +1,6 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
-import { upsertIncidents, deleteStaleIncidents } from './incidents.js';
+import * as cheerio from 'cheerio';
+import { upsertIncidents, deleteStaleIncidents, updateMissionDetails } from './incidents.js';
 import { saveAllianceStats, getLatestAllianceStatsWithChanges } from './alliance-stats.js';
 import { upsertMembers, filterExcludedMembers, getAllMembers, getMemberCounts } from './alliance-members.js';
 import { broadcastDeleted, broadcastAllianceStats, broadcastMembers } from './sse.js';
@@ -44,19 +45,30 @@ class LssScraper {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private isRunning = false;
+  private isDetailsFetching = false;
   private intervalId: NodeJS.Timeout | null = null;
+  private detailsIntervalId: NodeJS.Timeout | null = null;
   private allianceStatsIntervalId: NodeJS.Timeout | null = null;
   private memberTrackingIntervalId: NodeJS.Timeout | null = null;
   private loginAttempts = 0;
   private maxLoginAttempts = 3;
   private startedAt: Date | null = null;
   private lastScrapeAt: Date | null = null;
+  private lastDetailsFetchAt: Date | null = null;
   private scrapeCount = 0;
+  private detailsFetchCount = 0;
+  private sessionCookie: string | null = null;
+  private pendingDetailFetches: string[] = [];
 
   private config = {
     email: process.env.LSS_EMAIL || '',
     password: process.env.LSS_PASSWORD || '',
-    scrapeInterval: parseInt(process.env.LSS_SCRAPE_INTERVAL_MS || '10000', 10),
+    // New config: separate intervals for list and details
+    missionListInterval: parseInt(process.env.LSS_MISSION_LIST_INTERVAL_MS || '1000', 10),
+    missionDetailsInterval: parseInt(process.env.LSS_MISSION_DETAILS_INTERVAL_MS || '15000', 10),
+    httpDetailsEnabled: process.env.LSS_HTTP_DETAILS_ENABLED !== 'false',
+    httpDetailsParallel: parseInt(process.env.LSS_HTTP_DETAILS_PARALLEL || '5', 10),
+    httpDetailsBatchDelay: parseInt(process.env.LSS_HTTP_DETAILS_BATCH_DELAY_MS || '500', 10),
     allianceStatsInterval: parseInt(process.env.LSS_ALLIANCE_STATS_INTERVAL_MS || '300000', 10), // 5 minutes default
     memberTrackingInterval: parseInt(process.env.LSS_MEMBER_TRACKING_INTERVAL_MS || '60000', 10), // 1 minute default
     headless: process.env.LSS_HEADLESS !== 'false',
@@ -71,7 +83,10 @@ class LssScraper {
 
     logger.info('Starting scraper...');
     logger.info({
-      scrapeInterval: this.config.scrapeInterval,
+      missionListInterval: this.config.missionListInterval,
+      missionDetailsInterval: this.config.missionDetailsInterval,
+      httpDetailsEnabled: this.config.httpDetailsEnabled,
+      httpDetailsParallel: this.config.httpDetailsParallel,
       allianceStatsInterval: this.config.allianceStatsInterval,
       memberTrackingInterval: this.config.memberTrackingInterval,
       headless: this.config.headless,
@@ -81,6 +96,10 @@ class LssScraper {
       await this.initBrowser();
       await this.ensureLoggedIn();
 
+      // Extract and store session cookie after login
+      this.sessionCookie = await this.extractSessionCookie();
+      logger.info('Session cookie extracted');
+
       // Fetch alliance stats and members immediately after login (before starting loops)
       logger.info('Fetching initial data after login...');
       await Promise.all([
@@ -89,7 +108,9 @@ class LssScraper {
       ]);
       logger.info('Initial data fetched successfully');
 
-      this.startScrapeLoop();
+      // Start separate loops for mission list and details
+      this.startMissionListLoop();
+      this.startMissionDetailsLoop();
       this.startAllianceStatsLoop();
       this.startMemberTrackingLoop();
       this.startedAt = new Date();
@@ -104,6 +125,10 @@ class LssScraper {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
+    }
+    if (this.detailsIntervalId) {
+      clearInterval(this.detailsIntervalId);
+      this.detailsIntervalId = null;
     }
     if (this.allianceStatsIntervalId) {
       clearInterval(this.allianceStatsIntervalId);
@@ -254,16 +279,91 @@ class LssScraper {
     }
   }
 
-  private startScrapeLoop(): void {
-    logger.info('Starting scrape loop');
+  // Session Cookie Management
+  private async extractSessionCookie(): Promise<string | null> {
+    if (!this.page) return null;
+
+    try {
+      const cookies = await this.page.cookies(this.config.baseUrl);
+      const sessionCookie = cookies.find(c => c.name === '_session_id');
+
+      if (sessionCookie) {
+        // Return full cookie header for this domain
+        return cookies.map(c => `${c.name}=${c.value}`).join('; ');
+      }
+
+      logger.warn('Session cookie not found');
+      return null;
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to extract session cookie');
+      return null;
+    }
+  }
+
+  private async validateSessionCookie(): Promise<boolean> {
+    if (!this.sessionCookie) return false;
+
+    try {
+      // Use a lightweight endpoint to test session validity
+      const response = await fetch(`${this.config.baseUrl}/api/allianceinfo`, {
+        headers: {
+          'Cookie': this.sessionCookie,
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        redirect: 'manual', // Don't follow redirects automatically
+      });
+
+      // If we get 200, session is valid
+      // If we get 302/401, session is invalid (redirect to login)
+      return response.status === 200;
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to validate session cookie');
+      return false;
+    }
+  }
+
+  private async ensureValidSession(): Promise<void> {
+    const isValid = await this.validateSessionCookie();
+
+    if (!isValid) {
+      logger.warn('Session invalid, re-logging in via Puppeteer...');
+      await this.ensureLoggedIn();
+      this.sessionCookie = await this.extractSessionCookie();
+
+      if (this.sessionCookie) {
+        logger.info('Session cookie updated after re-login');
+      } else {
+        logger.error('Failed to extract session cookie after re-login');
+      }
+    }
+  }
+
+  private startMissionListLoop(): void {
+    logger.info('Starting mission list loop');
 
     // Initial scrape
-    this.scrape();
+    this.scrapeMissionList();
 
     // Set up interval
     this.intervalId = setInterval(() => {
-      this.scrape();
-    }, this.config.scrapeInterval);
+      this.scrapeMissionList();
+    }, this.config.missionListInterval);
+  }
+
+  private startMissionDetailsLoop(): void {
+    logger.info('Starting mission details loop');
+
+    // Set up interval (first run will happen after the interval time)
+    this.detailsIntervalId = setInterval(() => {
+      this.fetchPendingMissionDetails();
+    }, this.config.missionDetailsInterval);
+  }
+
+  // Old method - deprecated but kept for reference
+  // Use startMissionListLoop() and startMissionDetailsLoop() instead
+  private startScrapeLoop(): void {
+    logger.warn('startScrapeLoop is deprecated, use startMissionListLoop and startMissionDetailsLoop instead');
   }
 
   private startAllianceStatsLoop(): void {
@@ -372,6 +472,82 @@ class LssScraper {
     }
   }
 
+  // New method: Only scrape mission list (fast, DOM-based)
+  private async scrapeMissionList(): Promise<void> {
+    if (this.isRunning || !this.page) return;
+
+    this.isRunning = true;
+
+    try {
+      // Check if still logged in
+      const missionList = await this.page.$('#mission_list');
+      if (!missionList) {
+        logger.warn('Session expired, re-logging in...');
+        const loggedIn = await this.ensureLoggedIn();
+        if (!loggedIn) {
+          logger.error('Could not re-login, stopping scraper');
+          await this.stop();
+          return;
+        }
+        // Update session cookie after re-login
+        this.sessionCookie = await this.extractSessionCookie();
+      }
+
+      // Extract missions (only basic data from DOM)
+      const { missions, stats } = await this.extractMissions();
+
+      // Get list of active mission IDs from the DOM
+      const activeLsIds = missions.map(m => m.ls_id);
+
+      // Delete incidents that are no longer in the DOM (completed missions)
+      const deletedIncidents = await deleteStaleIncidents(activeLsIds);
+      if (deletedIncidents.length > 0) {
+        broadcastDeleted(deletedIncidents);
+        logger.info({ count: deletedIncidents.length }, 'Deleted completed missions');
+      }
+
+      if (missions.length > 0) {
+        // Save to database (SSE broadcast happens inside upsertIncidents)
+        const result = await upsertIncidents(missions);
+        logger.debug({
+          total: missions.length,
+          created: result.created,
+          updated: result.updated,
+        }, 'Mission list synced');
+      }
+
+      // Collect mission IDs that need details (planned + emergency only)
+      const missionsNeedingDetails = missions.filter(m => m.category === 'planned' || m.category === 'emergency');
+      this.pendingDetailFetches = missionsNeedingDetails.map(m => m.ls_id);
+
+      // Log stats
+      logger.debug({
+        emergency: stats.emergency,
+        planned: stats.planned,
+        event: stats.event.count,
+        total: stats.total,
+        skipped: stats.skipped,
+        pendingDetails: this.pendingDetailFetches.length,
+      }, 'Mission list stats');
+
+      // Update scrape stats
+      this.lastScrapeAt = new Date();
+      this.scrapeCount++;
+    } catch (error) {
+      logger.error({ err: error }, 'Mission list scrape error');
+
+      // Try to recover by reloading page
+      try {
+        await this.page?.reload({ waitUntil: 'networkidle2' });
+      } catch {
+        // Ignore reload errors
+      }
+    } finally {
+      this.isRunning = false;
+    }
+  }
+
+  // Old scrape method (kept for backward compatibility / fallback)
   private async scrape(): Promise<void> {
     if (this.isRunning || !this.page) return;
 
@@ -554,6 +730,205 @@ class LssScraper {
     if (detailsCount > 0) {
       logger.debug({ fetched: detailsCount, total: missions.length, withCountdown: withTimeCount }, 'Mission details fetched');
     }
+  }
+
+  // New method: Fetch pending mission details via HTTP
+  private async fetchPendingMissionDetails(): Promise<void> {
+    if (this.isDetailsFetching || this.pendingDetailFetches.length === 0) return;
+
+    this.isDetailsFetching = true;
+
+    try {
+      const missionIds = [...this.pendingDetailFetches]; // Copy array
+      logger.debug({ count: missionIds.length }, 'Fetching mission details via HTTP');
+
+      if (this.config.httpDetailsEnabled) {
+        await this.fetchMissionDetailsHTTP(missionIds);
+      } else {
+        // Fallback to Puppeteer method
+        logger.warn('HTTP details disabled, falling back to Puppeteer method');
+        const missions = missionIds.map(id => ({
+          ls_id: id,
+          title: '',
+          type: null,
+          status: 'active',
+          source: 'unknown' as const,
+          category: 'emergency' as const,
+          lat: null,
+          lon: null,
+          address: null,
+          raw_json: {},
+        }));
+        await this.fetchMissionDetails(missions);
+      }
+
+      this.lastDetailsFetchAt = new Date();
+      this.detailsFetchCount++;
+    } catch (error) {
+      logger.error({ err: error }, 'Error fetching pending mission details');
+    } finally {
+      this.isDetailsFetching = false;
+    }
+  }
+
+  // HTTP-based mission details fetcher
+  private async fetchMissionDetailsHTTP(missionIds: string[]): Promise<void> {
+    if (missionIds.length === 0) return;
+
+    // Ensure session is valid before making requests
+    await this.ensureValidSession();
+
+    if (!this.sessionCookie) {
+      logger.error('No valid session cookie, cannot fetch details');
+      return;
+    }
+
+    // Split into chunks for parallel processing
+    const chunks = this.chunkArray(missionIds, this.config.httpDetailsParallel);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const chunk of chunks) {
+      // Process chunk in parallel
+      const results = await Promise.allSettled(
+        chunk.map(missionId => this.fetchSingleMissionDetailHTTP(missionId))
+      );
+
+      // Count successes and errors
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      }
+
+      // Delay between batches to avoid overwhelming the server
+      if (chunks.indexOf(chunk) < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, this.config.httpDetailsBatchDelay));
+      }
+    }
+
+    logger.info({
+      total: missionIds.length,
+      success: successCount,
+      errors: errorCount,
+    }, 'Mission details fetched via HTTP');
+  }
+
+  // Fetch a single mission detail via HTTP
+  private async fetchSingleMissionDetailHTTP(missionId: string): Promise<void> {
+    try {
+      const url = `${this.config.baseUrl}/missions/${missionId}`;
+      const response = await fetch(url, {
+        headers: {
+          'Cookie': this.sessionCookie!,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        },
+      });
+
+      // Check for redirect to login (session expired)
+      if (response.status === 401 || response.url.includes('/users/sign_in')) {
+        logger.warn({ missionId }, 'Session expired during detail fetch, will re-login');
+        await this.ensureValidSession();
+        throw new Error('Session expired');
+      }
+
+      // Check for 404 (mission no longer exists)
+      if (response.status === 404) {
+        logger.debug({ missionId }, 'Mission not found (404), likely completed');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const html = await response.text();
+      const details = this.parseDetailsFromHTML(html, missionId);
+
+      // Update in database
+      await updateMissionDetails(missionId, details);
+
+    } catch (error) {
+      logger.error({ err: error, missionId }, 'Failed to fetch mission detail via HTTP');
+      throw error;
+    }
+  }
+
+  // Parse mission details from HTML using cheerio
+  private parseDetailsFromHTML(html: string, missionId: string): Record<string, unknown> {
+    const $ = cheerio.load(html);
+
+    // Extract remaining seconds from countdown
+    let remainingSeconds: number | null = null;
+    const countdownEl = $(`#mission_countdown_${missionId}`);
+    if (countdownEl.length > 0) {
+      const timeText = countdownEl.text().trim();
+      if (timeText) {
+        const parts = timeText.split(':').map(p => parseInt(p, 10));
+        if (parts.length === 3 && parts.every(p => !isNaN(p))) {
+          // HH:MM:SS
+          remainingSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        } else if (parts.length === 2 && parts.every(p => !isNaN(p))) {
+          // MM:SS
+          remainingSeconds = parts[0] * 60 + parts[1];
+        }
+      }
+    }
+
+    // Extract mission duration from detail page (e.g., "Dauer: 2 Stunden" or "Dauer: 1 Stunde 30 Minuten")
+    let durationSeconds: number | null = null;
+    const bodyText = $('body').text();
+    const durationMatch = bodyText.match(/Dauer:\s*(?:(\d+)\s*Stunden?)?\s*(?:(\d+)\s*Minuten?)?/i);
+    if (durationMatch) {
+      const hours = parseInt(durationMatch[1], 10) || 0;
+      const minutes = parseInt(durationMatch[2], 10) || 0;
+      if (hours > 0 || minutes > 0) {
+        durationSeconds = hours * 3600 + minutes * 60;
+      }
+    }
+
+    // Extract players from vehicle tables
+    const getPlayers = (tableId: string): string[] => {
+      const table = $(`#${tableId}`);
+      if (table.length === 0) return [];
+
+      const playerLinks = table.find('a[href^="/profile/"]');
+      const players: string[] = [];
+      const seen = new Set<string>();
+
+      playerLinks.each((_, el) => {
+        const name = $(el).text().trim();
+        if (name && !seen.has(name)) {
+          seen.add(name);
+          players.push(name);
+        }
+      });
+
+      return players;
+    };
+
+    const playersDriving = getPlayers('mission_vehicle_driving');
+    const playersAtMission = getPlayers('mission_vehicle_at_mission');
+
+    return {
+      remaining_seconds: remainingSeconds,
+      remaining_at: new Date().toISOString(),
+      duration_seconds: durationSeconds,
+      players_driving: playersDriving,
+      players_at_mission: playersAtMission,
+    };
+  }
+
+  // Helper method to chunk array
+  private chunkArray<T>(array: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+      chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
   }
 
   private async extractMissions(): Promise<{ missions: MissionData[]; stats: ScraperStats }> {
