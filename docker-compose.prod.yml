@@ -1,4 +1,6 @@
-# Production docker-compose - uses pre-built images from GHCR
+# Production docker-compose
+# - API: Uses pre-built image from GHCR
+# - Web: Builds locally with VITE_API_URL from .env (required because it's embedded at build time)
 # For local development, use docker-compose.yml instead
 
 services:
@@ -68,8 +70,8 @@ services:
         max-file: "5"
 
   web:
-    # Use pre-built image from GHCR, or build locally if you need custom VITE_API_URL
-    image: ghcr.io/ernobyl-1/lss-verband-tool-web:latest
+    # Always build locally with correct VITE_API_URL from .env
+    # Note: Frontend must be built (not pulled) because VITE_API_URL is embedded at build time
     build:
       context: .
       dockerfile: apps/web/Dockerfile
