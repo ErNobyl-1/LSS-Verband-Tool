@@ -5,6 +5,7 @@ import { saveAllianceStats, getLatestAllianceStatsWithChanges } from './alliance
 import { upsertMembers, filterExcludedMembers, getAllMembers, getMemberCounts } from './alliance-members.js';
 import { broadcastDeleted, broadcastAllianceStats, broadcastMembers } from './sse.js';
 import { scraperLogger as logger } from '../lib/logger.js';
+import { emailService } from '../lib/email.js';
 
 // Mission list configuration - same as Tampermonkey script
 const MISSION_LISTS = [
@@ -116,6 +117,11 @@ class LssScraper {
       this.startedAt = new Date();
     } catch (error) {
       logger.error({ err: error }, 'Failed to start');
+      await emailService.notifyCriticalError(error as Error, {
+        component: 'LSS Scraper',
+        action: 'start',
+        loginAttempts: this.loginAttempts,
+      });
       await this.cleanup();
     }
   }
@@ -222,7 +228,17 @@ class LssScraper {
     if (!this.page) return false;
 
     if (this.loginAttempts >= this.maxLoginAttempts) {
-      logger.error('Max login attempts reached');
+      const errorMsg = 'Max login attempts reached';
+      logger.error(errorMsg);
+      await emailService.notifyCriticalError(
+        new Error(errorMsg),
+        {
+          component: 'LSS Scraper',
+          action: 'login',
+          loginAttempts: this.loginAttempts,
+          maxAttempts: this.maxLoginAttempts,
+        }
+      );
       return false;
     }
 
@@ -268,13 +284,34 @@ class LssScraper {
       if (errorMessage) {
         const text = await this.page.evaluate(el => el?.textContent || '', errorMessage);
         logger.error({ reason: text.trim() }, 'Login failed');
+        // Send warning email on login failure
+        if (this.loginAttempts >= 2) {
+          await emailService.notifyWarning('LSS Login failed', {
+            attempt: this.loginAttempts,
+            maxAttempts: this.maxLoginAttempts,
+            reason: text.trim(),
+          });
+        }
       } else {
         logger.error('Login failed - unknown reason');
+        if (this.loginAttempts >= 2) {
+          await emailService.notifyWarning('LSS Login failed - unknown reason', {
+            attempt: this.loginAttempts,
+            maxAttempts: this.maxLoginAttempts,
+          });
+        }
       }
 
       return false;
     } catch (error) {
       logger.error({ err: error }, 'Login error');
+      if (this.loginAttempts >= 2) {
+        await emailService.notifyWarning('LSS Login error', {
+          error: (error as Error).message,
+          attempt: this.loginAttempts,
+          maxAttempts: this.maxLoginAttempts,
+        });
+      }
       return false;
     }
   }

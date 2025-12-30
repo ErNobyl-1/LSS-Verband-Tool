@@ -11,6 +11,7 @@ import { authMiddleware } from './middleware/auth.js';
 import { ensureAdminExists, cleanupExpiredSessions } from './services/auth.js';
 import { runDataRetention } from './services/data-retention.js';
 import { logger } from './lib/logger.js';
+import { emailService, notifyError } from './lib/email.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -95,6 +96,18 @@ app.get('/', (req, res) => {
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   logger.error({ err }, 'Unhandled error');
+
+  // Send email notification for critical errors (don't wait, as Express error handlers shouldn't be async)
+  // We can fire and forget here since the server continues running
+  notifyError(err, {
+    path: req.path,
+    method: req.method,
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+  }).catch((emailErr) => {
+    logger.error({ err: emailErr }, 'Email notification failed in error handler');
+  });
+
   res.status(500).json({
     error: 'Internal Server Error',
     message: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred',
@@ -113,6 +126,16 @@ async function startServer() {
     // Initialize mission types cache
     await initializeMissionTypes();
 
+    // Verify email service if configured
+    if (emailService.isEnabled()) {
+      const isEmailWorking = await emailService.verifyConnection();
+      if (isEmailWorking) {
+        logger.info('Email service verified and ready');
+      } else {
+        logger.warn('Email service configured but connection verification failed');
+      }
+    }
+
     app.listen(Number(PORT), HOST, () => {
       logger.info({ host: HOST, port: PORT }, 'LSS Verband Tool API started');
       logger.info({ url: `http://${HOST}:${PORT}/api/stream` }, 'SSE stream available');
@@ -126,6 +149,7 @@ async function startServer() {
           }
         } catch (err) {
           logger.error({ err }, 'Session cleanup failed');
+          await notifyError(err as Error, { component: 'Session Cleanup' });
         }
       };
       runSessionCleanup(); // Beim Start
@@ -146,6 +170,7 @@ async function startServer() {
             await runDataRetention();
           } catch (err) {
             logger.error({ err }, 'Data retention failed');
+            await notifyError(err as Error, { component: 'Data Retention', schedule: 'initial' });
           }
           // Nach erstem Lauf: täglich wiederholen
           setInterval(async () => {
@@ -153,6 +178,7 @@ async function startServer() {
               await runDataRetention();
             } catch (err) {
               logger.error({ err }, 'Data retention failed');
+              await notifyError(err as Error, { component: 'Data Retention', schedule: 'daily' });
             }
           }, 24 * 60 * 60 * 1000); // Alle 24 Stunden
         }, msUntilNextRun);
@@ -164,8 +190,9 @@ async function startServer() {
       // Start the LSS scraper if credentials are configured
       if (process.env.LSS_EMAIL && process.env.LSS_PASSWORD) {
         logger.info('Starting LSS scraper...');
-        lssScraper.start().catch((err) => {
+        lssScraper.start().catch(async (err) => {
           logger.error({ err }, 'Failed to start LSS scraper');
+          await notifyError(err as Error, { component: 'LSS Scraper', action: 'start' });
         });
       } else {
         logger.warn('LSS scraper not started (LSS_EMAIL/LSS_PASSWORD not configured)');
@@ -173,6 +200,8 @@ async function startServer() {
     });
   } catch (error) {
     logger.fatal({ err: error }, 'Failed to start server');
+    // Wait for email notification before exiting
+    await notifyError(error as Error, { component: 'Server Startup' });
     process.exit(1);
   }
 }

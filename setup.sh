@@ -446,6 +446,58 @@ echo "Bearbeite die Datei: $INSTALL_DIR/.env"
 echo "Setze LSS_EMAIL und LSS_PASSWORD"
 echo ""
 
+# E-Mail-Benachrichtigungen konfigurieren (optional)
+echo ""
+log_info "E-Mail-Benachrichtigungen konfigurieren (optional)"
+echo "Das Tool kann bei kritischen Fehlern automatisch E-Mails senden."
+echo ""
+read -p "E-Mail-Benachrichtigungen aktivieren? (j/n): " SETUP_EMAIL
+
+if [ "$SETUP_EMAIL" = "j" ] || [ "$SETUP_EMAIL" = "J" ]; then
+    echo ""
+    echo "SMTP-Konfiguration:"
+    echo "Beispiele:"
+    echo "  Gmail:        smtp.gmail.com (Port 587)"
+    echo "  Outlook:      smtp.office365.com (Port 587)"
+    echo "  Custom SMTP:  mail.example.com"
+    echo ""
+
+    read -p "SMTP Host (z.B. smtp.gmail.com): " SMTP_HOST
+    read -p "SMTP Port [587]: " SMTP_PORT
+    SMTP_PORT="${SMTP_PORT:-587}"
+
+    # SMTP_SECURE basierend auf Port setzen
+    if [ "$SMTP_PORT" = "465" ]; then
+        SMTP_SECURE="true"
+    else
+        SMTP_SECURE="false"
+    fi
+
+    read -p "SMTP Benutzername (E-Mail): " SMTP_USER
+    read -sp "SMTP Passwort (App-Passwort empfohlen): " SMTP_PASSWORD
+    echo ""
+    read -p "E-Mail für Benachrichtigungen: " ALERT_EMAIL
+
+    # .env aktualisieren mit SMTP-Daten
+    sed -i "s|SMTP_HOST=.*|SMTP_HOST=${SMTP_HOST}|" "$INSTALL_DIR/.env"
+    sed -i "s|SMTP_PORT=.*|SMTP_PORT=${SMTP_PORT}|" "$INSTALL_DIR/.env"
+    sed -i "s|SMTP_SECURE=.*|SMTP_SECURE=${SMTP_SECURE}|" "$INSTALL_DIR/.env"
+    sed -i "s|SMTP_USER=.*|SMTP_USER=${SMTP_USER}|" "$INSTALL_DIR/.env"
+    sed -i "s|SMTP_PASSWORD=.*|SMTP_PASSWORD=${SMTP_PASSWORD}|" "$INSTALL_DIR/.env"
+    sed -i "s|SMTP_FROM=.*|SMTP_FROM=LSS Verband Tool <${SMTP_USER}>|" "$INSTALL_DIR/.env"
+    sed -i "s|ALERT_EMAIL=.*|ALERT_EMAIL=${ALERT_EMAIL}|" "$INSTALL_DIR/.env"
+
+    log_success "E-Mail-Benachrichtigungen konfiguriert"
+    echo ""
+    log_info "Hinweis für Gmail:"
+    echo "  1. Aktiviere 2-Faktor-Authentifizierung"
+    echo "  2. Erstelle App-Passwort: https://myaccount.google.com/apppasswords"
+    echo "  3. Verwende das App-Passwort statt deinem normalen Passwort"
+else
+    log_info "E-Mail-Benachrichtigungen übersprungen (kann später in .env konfiguriert werden)"
+fi
+
+echo ""
 read -p "Jetzt .env bearbeiten? (j/n): " EDIT_ENV
 if [ "$EDIT_ENV" = "j" ] || [ "$EDIT_ENV" = "J" ]; then
     ${EDITOR:-nano} "$INSTALL_DIR/.env"
@@ -758,9 +810,22 @@ echo -e "${YELLOW}═══ JETZT ERLEDIGEN ═══${NC}"
 echo "1. BEIDE Passwörter sicher speichern (Admin + SSH)!"
 echo "2. Prüfe ob LSS_EMAIL und LSS_PASSWORD in .env gesetzt sind:"
 echo "   nano ${INSTALL_DIR}/.env"
-echo "3. Falls .env geändert: docker compose -f docker-compose.prod.yml restart"
-echo "4. Teste Login: https://${DOMAIN}"
-echo "5. Teste SSH: ssh ${DEPLOY_USER}@${DOMAIN}"
+echo "3. (Optional) Prüfe E-Mail-Benachrichtigungen in .env"
+echo "4. Falls .env geändert: docker compose -f docker-compose.prod.yml restart"
+echo "5. Teste Login: https://${DOMAIN}"
+echo "6. Teste SSH: ssh ${DEPLOY_USER}@${DOMAIN}"
+echo ""
+echo -e "${BLUE}═══ E-MAIL-BENACHRICHTIGUNGEN ═══${NC}"
+if [ "$SETUP_EMAIL" = "j" ] || [ "$SETUP_EMAIL" = "J" ]; then
+    echo "  Status:         Konfiguriert"
+    echo "  SMTP Host:      ${SMTP_HOST}:${SMTP_PORT}"
+    echo "  Alerts an:      ${ALERT_EMAIL}"
+    echo "  Dokumentation:  ${INSTALL_DIR}/docs/email-notifications.md"
+else
+    echo "  Status:         Nicht konfiguriert"
+    echo "  Aktivieren:     Bearbeite ${INSTALL_DIR}/.env und setze SMTP_* Variablen"
+    echo "  Dokumentation:  ${INSTALL_DIR}/docs/email-notifications.md"
+fi
 echo ""
 
 # Passwörter in Datei speichern (nur lesbar für root)
