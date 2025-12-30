@@ -29,6 +29,13 @@
       "when": 1765556592398,
       "tag": "0003_jittery_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1735574400000,
+      "tag": "0004_add_all_new_incident_fields",
+      "breakpoints": true
     }
   ]
 }
