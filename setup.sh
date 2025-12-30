@@ -401,24 +401,32 @@ EOF
 esac
 
 # =============================================================================
-# Projekt klonen
+# Projekt klonen / aktualisieren
 # =============================================================================
-log_info "Klone Repository..."
-
-if [ -d "$INSTALL_DIR" ]; then
-    log_warn "Verzeichnis existiert bereits: $INSTALL_DIR"
+if [ -d "$INSTALL_DIR/.git" ]; then
+    log_info "Repository existiert bereits, aktualisiere..."
+    cd "$INSTALL_DIR"
+    git fetch origin
+    git reset --hard origin/main
+    log_success "Repository aktualisiert"
+elif [ -d "$INSTALL_DIR" ]; then
+    log_warn "Verzeichnis existiert bereits aber ist kein Git-Repository: $INSTALL_DIR"
     read -p "Löschen und neu klonen? (j/n): " DELETE_DIR
     if [ "$DELETE_DIR" = "j" ] || [ "$DELETE_DIR" = "J" ]; then
         rm -rf "$INSTALL_DIR"
+        git clone "$GIT_REPO" "$INSTALL_DIR"
+        cd "$INSTALL_DIR"
+        log_success "Repository geklont"
     else
         log_error "Abgebrochen."
         exit 1
     fi
+else
+    log_info "Klone Repository..."
+    git clone "$GIT_REPO" "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
+    log_success "Repository geklont"
 fi
-
-git clone "$GIT_REPO" "$INSTALL_DIR"
-cd "$INSTALL_DIR"
-log_success "Repository geklont"
 
 # =============================================================================
 # .env erstellen
