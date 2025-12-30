@@ -433,24 +433,55 @@ fi
 # =============================================================================
 log_info "Erstelle .env Konfiguration..."
 
+ENV_EXISTS=false
 if [ -f "$INSTALL_DIR/.env" ]; then
     log_warn ".env existiert bereits"
+    ENV_EXISTS=true
 else
     cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
+    log_success ".env aus .env.example erstellt"
 fi
 
-# Sichere Passwörter generieren
-ADMIN_PW=$(openssl rand -base64 24 | tr -d '/+=' | head -c 20)
-POSTGRES_PW=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
+# Passwörter nur bei NEUEM .env generieren
+if [ "$ENV_EXISTS" = false ]; then
+    # Sichere Passwörter generieren
+    ADMIN_PW=$(openssl rand -base64 24 | tr -d '/+=' | head -c 20)
+    POSTGRES_PW=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
 
-# .env aktualisieren
-sed -i "s|ADMIN_PASSWORD=.*|ADMIN_PASSWORD=${ADMIN_PW}|" "$INSTALL_DIR/.env"
-sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PW}|" "$INSTALL_DIR/.env"
-sed -i "s|CORS_ORIGIN=.*|CORS_ORIGIN=https://${DOMAIN}|" "$INSTALL_DIR/.env"
-sed -i "s|VITE_API_URL=.*|VITE_API_URL=https://${DOMAIN}/api|" "$INSTALL_DIR/.env"
-sed -i "s|NODE_ENV=.*|NODE_ENV=production|" "$INSTALL_DIR/.env"
+    # .env aktualisieren
+    sed -i "s|ADMIN_PASSWORD=.*|ADMIN_PASSWORD=${ADMIN_PW}|" "$INSTALL_DIR/.env"
+    sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PW}|" "$INSTALL_DIR/.env"
+    sed -i "s|CORS_ORIGIN=.*|CORS_ORIGIN=https://${DOMAIN}|" "$INSTALL_DIR/.env"
+    sed -i "s|VITE_API_URL=.*|VITE_API_URL=https://${DOMAIN}/api|" "$INSTALL_DIR/.env"
+    sed -i "s|NODE_ENV=.*|NODE_ENV=production|" "$INSTALL_DIR/.env"
 
-log_success ".env konfiguriert"
+    log_success ".env mit generierten Passwörtern konfiguriert"
+else
+    # Fehlende Variablen aus .env.example hinzufügen
+    log_info "Prüfe auf neue Konfigurationsvariablen..."
+    while IFS='=' read -r key value; do
+        # Überspringe Kommentare und leere Zeilen
+        [[ "$key" =~ ^#.*$ ]] && continue
+        [[ -z "$key" ]] && continue
+
+        # Prüfe ob Variable in .env existiert
+        if ! grep -q "^${key}=" "$INSTALL_DIR/.env"; then
+            echo "${key}=${value}" >> "$INSTALL_DIR/.env"
+            log_info "Neue Variable hinzugefügt: $key"
+        fi
+    done < "$INSTALL_DIR/.env.example"
+
+    # Nur Domain/URL aktualisieren, Passwörter NICHT ändern
+    sed -i "s|CORS_ORIGIN=.*|CORS_ORIGIN=https://${DOMAIN}|" "$INSTALL_DIR/.env"
+    sed -i "s|VITE_API_URL=.*|VITE_API_URL=https://${DOMAIN}/api|" "$INSTALL_DIR/.env"
+    sed -i "s|NODE_ENV=.*|NODE_ENV=production|" "$INSTALL_DIR/.env"
+
+    # Bestehende Passwörter aus .env auslesen
+    ADMIN_PW=$(grep "^ADMIN_PASSWORD=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+    POSTGRES_PW=$(grep "^POSTGRES_PASSWORD=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+
+    log_success ".env aktualisiert (Passwörter beibehalten, neue Variablen hinzugefügt)"
+fi
 
 echo ""
 echo "=========================================="
