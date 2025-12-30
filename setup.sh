@@ -452,7 +452,7 @@ if [ "$ENV_EXISTS" = false ]; then
     sed -i "s|ADMIN_PASSWORD=.*|ADMIN_PASSWORD=${ADMIN_PW}|" "$INSTALL_DIR/.env"
     sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PW}|" "$INSTALL_DIR/.env"
     sed -i "s|CORS_ORIGIN=.*|CORS_ORIGIN=https://${DOMAIN}|" "$INSTALL_DIR/.env"
-    sed -i "s|VITE_API_URL=.*|VITE_API_URL=https://${DOMAIN}/api|" "$INSTALL_DIR/.env"
+    sed -i "s|VITE_API_URL=.*|VITE_API_URL=https://${DOMAIN}|" "$INSTALL_DIR/.env"
     sed -i "s|NODE_ENV=.*|NODE_ENV=production|" "$INSTALL_DIR/.env"
 
     # DATABASE_URL mit generiertem Passwort aktualisieren
@@ -476,7 +476,7 @@ else
 
     # Nur Domain/URL aktualisieren, Passwörter NICHT ändern
     sed -i "s|CORS_ORIGIN=.*|CORS_ORIGIN=https://${DOMAIN}|" "$INSTALL_DIR/.env"
-    sed -i "s|VITE_API_URL=.*|VITE_API_URL=https://${DOMAIN}/api|" "$INSTALL_DIR/.env"
+    sed -i "s|VITE_API_URL=.*|VITE_API_URL=https://${DOMAIN}|" "$INSTALL_DIR/.env"
     sed -i "s|NODE_ENV=.*|NODE_ENV=production|" "$INSTALL_DIR/.env"
 
     # Bestehende Passwörter aus .env auslesen
