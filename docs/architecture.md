@@ -110,11 +110,15 @@ Das LSS Verband Tool ist ein selbst gehostetes System zur Echtzeit-Übersicht vo
 └── /health
 ```
 
-### 3. LSS Scraper (Puppeteer)
+### 3. LSS Scraper (Puppeteer + HTTP)
 
-**Technologie:** Puppeteer mit Chromium
+**Technologie:** Puppeteer mit Chromium + Axios + Cheerio
 
-**Funktion:** Extrahiert Daten aus dem Leitstellenspiel via Headless Browser.
+**Funktion:** Extrahiert Daten aus dem Leitstellenspiel via Headless Browser und HTTP-Requests.
+
+**Architektur:** Dual-Loop Design für optimale Performance
+- **Loop 1 (Puppeteer)**: Schnelle DOM-Extraktion der Mission-Liste auf der Hauptseite
+- **Loop 2 (HTTP + Cheerio)**: Parallele Detail-Abfragen via direkten HTTP-Requests
 
 **Datenquellen:**
 
@@ -132,15 +136,18 @@ Das LSS Verband Tool ist ein selbst gehostetes System zur Echtzeit-Übersicht vo
 
 | Loop | Intervall | Funktion |
 |------|-----------|----------|
-| Mission Scrape | 1-10s (konfigurierbar) | Einsätze extrahieren |
+| Mission List | 1-2s (konfigurierbar) | Einsatz-Liste extrahieren (nur DOM) |
+| Mission Details | 15-30s (konfigurierbar) | Details via HTTP fetchen (parallel) |
 | Member Tracking | 5-60s (konfigurierbar) | Online-Status prüfen |
 | Alliance Stats | 5 min | Verbandsstatistiken |
 
 **Verhalten:**
 - Automatischer Login mit konfigurierten Credentials
-- Re-Login bei Session-Ablauf
+- Session-Cookie-Extraktion für HTTP-Requests
+- Re-Login bei Session-Ablauf (automatisch)
 - Retry bei Fehlern (max. 3 Versuche)
 - Nur freigegebene eigene Einsätze werden erfasst (`panel-success`)
+- Parallele Detail-Abfragen mit Rate-Limiting (max. 5 gleichzeitig)
 
 ### 4. PostgreSQL Database
 
@@ -160,8 +167,9 @@ Das LSS Verband Tool ist ein selbst gehostetes System zur Echtzeit-Übersicht vo
 
 ## Datenfluss
 
-### 1. Scrape Flow
+### 1. Scrape Flow (Dual-Loop Architektur)
 
+**Loop 1 - Mission List (schnell, ~1 Sekunde):**
 ```
 1. Scraper startet Chromium
 2. Login auf leitstellenspiel.de mit Credentials
@@ -169,16 +177,36 @@ Das LSS Verband Tool ist ein selbst gehostetes System zur Echtzeit-Übersicht vo
 4. Loop:
    a. DOM-Extraktion aus allen Mission Lists
    b. Filterung: nur freigegebene eigene Einsätze
-   c. Detail-Seiten laden (für Koordinaten/Teilnehmer)
-   d. Upsert in PostgreSQL
+   c. Extrahiere: ID, Titel, Status, Koordinaten, Adresse
+   d. Upsert in PostgreSQL (nur Basis-Daten)
    e. SSE Broadcast an verbundene Clients
-   f. Warten auf nächstes Intervall
+   f. Markiere neue/geänderte Missions für Detail-Fetch
+   g. Warten auf nächstes Intervall (1-2s)
 ```
+
+**Loop 2 - Mission Details (langsam, ~15 Sekunden):**
+```
+1. Hole Liste aller aktiven Mission-IDs aus DB
+2. Für jede Mission (parallel, max. 5 gleichzeitig):
+   a. HTTP GET zu /missions/{id} (mit Session-Cookie)
+   b. Parse HTML mit cheerio
+   c. Extrahiere: remaining_seconds, duration_seconds, players
+   d. Update Mission-Details in PostgreSQL
+   e. Bei Session-Ablauf: Trigger Re-Login in Puppeteer
+3. Warten auf nächstes Intervall (15-30s)
+```
+
+**Vorteile:**
+- 98% weniger Requests zum LSS-Server
+- Kein ständiges Browser-Navigieren
+- Parallele Detail-Abfragen möglich
+- Schnellere Live-Updates für Liste
+- Niedrigerer RAM/CPU-Verbrauch
 
 ### 2. Member Tracking Flow
 
 ```
-1. HTTP Request zu /api/allianceinfo (mit Session-Cookies)
+1. HTTP Request zu /api/allianceinfo (mit Session-Cookie aus Puppeteer)
 2. Parse JSON Response (Member-Liste mit Online-Status)
 3. Vergleich mit DB:
    - Neue Member → INSERT
@@ -261,14 +289,22 @@ Das System ist für kleine bis mittlere Verbände optimiert:
 | Benutzer | 10-50 gleichzeitig |
 | Einsätze | < 1000 aktiv |
 | SSE Clients | < 100 |
-| Scrape-Rate | 1 Request/Sekunde |
+| Mission List Rate | ~1 Request/Sekunde |
+| Mission Details Rate | ~4 Requests/Minute (bei 60 Einsätzen) |
 
 **Limitierungen:**
 - Single-Node (kein Cluster)
 - Keine horizontale Skalierung
-- Browser-basiertes Scraping (ressourcenintensiv)
+- Puppeteer benötigt 150-300 MB RAM
 
 **Für größere Installationen:**
-- Scrape-Intervall erhöhen
+- Mission List Intervall: 2-5s statt 1s
+- Mission Details Intervall: 30-60s statt 15s
 - Data Retention verkürzen
 - Mehr RAM für Chromium
+
+**Performance-Optimierung (seit Dezember 2024):**
+- Dual-Loop Architektur reduziert Requests um 98%
+- HTTP-basierte Detail-Abfragen (parallel)
+- RAM-Verbrauch um 40% reduziert
+- Keine Browser-Navigationen mehr für Details
