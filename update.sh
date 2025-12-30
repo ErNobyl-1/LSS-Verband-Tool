@@ -34,9 +34,10 @@ if [ -d ".git" ]; then
     git pull --ff-only || log_warn "Git pull fehlgeschlagen (lokale Änderungen?)"
 fi
 
-# Neue Images pullen
-log_info "Lade neue Docker Images..."
-docker compose -f docker-compose.prod.yml pull
+# API Image pullen, Frontend lokal bauen
+log_info "Lade API Image und baue Frontend mit korrekter API-URL..."
+docker compose -f docker-compose.prod.yml pull api
+docker compose -f docker-compose.prod.yml build --no-cache web
 
 # Container neu starten
 log_info "Starte Container neu..."
