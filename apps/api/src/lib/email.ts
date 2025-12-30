@@ -241,12 +241,14 @@ ${details ? `
 export const emailService = new EmailService();
 
 // Export helper function for critical errors
-export const notifyError = (error: Error, context?: Record<string, unknown>) => {
+export const notifyError = async (error: Error, context?: Record<string, unknown>) => {
   // Log the error first
   logger.error({ error, context }, 'Critical error occurred');
 
-  // Send email notification (async, don't wait)
-  emailService.notifyCriticalError(error, context).catch((emailError) => {
+  // Send email notification and wait for it to complete
+  try {
+    await emailService.notifyCriticalError(error, context);
+  } catch (emailError) {
     logger.error({ error: emailError }, 'Failed to send error notification email');
-  });
+  }
 };

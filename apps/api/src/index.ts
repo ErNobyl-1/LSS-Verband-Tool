@@ -97,12 +97,15 @@ app.get('/', (req, res) => {
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   logger.error({ err }, 'Unhandled error');
 
-  // Send email notification for critical errors
+  // Send email notification for critical errors (don't wait, as Express error handlers shouldn't be async)
+  // We can fire and forget here since the server continues running
   notifyError(err, {
     path: req.path,
     method: req.method,
     ip: req.ip,
     userAgent: req.get('user-agent'),
+  }).catch((emailErr) => {
+    logger.error({ err: emailErr }, 'Email notification failed in error handler');
   });
 
   res.status(500).json({
@@ -146,7 +149,7 @@ async function startServer() {
           }
         } catch (err) {
           logger.error({ err }, 'Session cleanup failed');
-          notifyError(err as Error, { component: 'Session Cleanup' });
+          await notifyError(err as Error, { component: 'Session Cleanup' });
         }
       };
       runSessionCleanup(); // Beim Start
@@ -167,7 +170,7 @@ async function startServer() {
             await runDataRetention();
           } catch (err) {
             logger.error({ err }, 'Data retention failed');
-            notifyError(err as Error, { component: 'Data Retention', schedule: 'initial' });
+            await notifyError(err as Error, { component: 'Data Retention', schedule: 'initial' });
           }
           // Nach erstem Lauf: täglich wiederholen
           setInterval(async () => {
@@ -175,7 +178,7 @@ async function startServer() {
               await runDataRetention();
             } catch (err) {
               logger.error({ err }, 'Data retention failed');
-              notifyError(err as Error, { component: 'Data Retention', schedule: 'daily' });
+              await notifyError(err as Error, { component: 'Data Retention', schedule: 'daily' });
             }
           }, 24 * 60 * 60 * 1000); // Alle 24 Stunden
         }, msUntilNextRun);
@@ -187,9 +190,9 @@ async function startServer() {
       // Start the LSS scraper if credentials are configured
       if (process.env.LSS_EMAIL && process.env.LSS_PASSWORD) {
         logger.info('Starting LSS scraper...');
-        lssScraper.start().catch((err) => {
+        lssScraper.start().catch(async (err) => {
           logger.error({ err }, 'Failed to start LSS scraper');
-          notifyError(err as Error, { component: 'LSS Scraper', action: 'start' });
+          await notifyError(err as Error, { component: 'LSS Scraper', action: 'start' });
         });
       } else {
         logger.warn('LSS scraper not started (LSS_EMAIL/LSS_PASSWORD not configured)');
@@ -197,7 +200,8 @@ async function startServer() {
     });
   } catch (error) {
     logger.fatal({ err: error }, 'Failed to start server');
-    notifyError(error as Error, { component: 'Server Startup' });
+    // Wait for email notification before exiting
+    await notifyError(error as Error, { component: 'Server Startup' });
     process.exit(1);
   }
 }
